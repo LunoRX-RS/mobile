@@ -1,0 +1,1256 @@
+@import "tailwindcss";
+
+/* LUNOR tokens (DESIGN.md). Tailwind reads these as utilities: bg-night-canvas, text-secondary-text, w-sidebar ... */
+@theme {
+  --color-night-canvas: #000000;
+  --color-sidebar-night: #060607;
+  --color-surface: #101012;
+  --color-elevated: #1d1d20;
+  --color-elevated-deep: #232327;
+  --color-hairline: rgba(255, 255, 255, 0.06);
+  --color-hairline-strong: rgba(255, 255, 255, 0.1);
+  --color-ink-bright: #ffffff;
+  --color-primary-text: #f5f5f7;
+  --color-secondary-text: #a3a8b2;
+  --color-tertiary-text: #9ca1a9;
+  --color-disabled-text: #4a5059;
+  --color-on-ink: #000000;
+  --color-lumen-lavender: #c5b4ff;
+  --color-lumen-wash: rgba(197, 180, 255, 0.14);
+  --color-lumen-edge: rgba(197, 180, 255, 0.4);
+  --color-on-lumen: #15112b;
+  --color-synced-blue: #8db8f2;
+  --color-caution-amber: #e9b872;
+  --color-critical-coral: #f28b6e;
+  --color-frost-100: rgba(255, 255, 255, 0.05);
+  --color-frost-200: rgba(255, 255, 255, 0.08);
+  --color-frost-300: rgba(255, 255, 255, 0.13);
+  --color-frost-dark: rgba(0, 0, 0, 0.55);
+  --color-scrim: rgba(0, 0, 0, 0.64);
+  --color-ambient-slate: #1c2a3a;
+  --color-ambient-violet: #241f36;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", Inter, system-ui, sans-serif;
+
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  --width-sidebar: 240px;
+  --width-sidebar-collapsed: 72px;
+  --height-topbar: 44px;
+  --height-player: 88px;
+  --max-width-content: 1680px;
+
+  --ease-lumen: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root {
+  color-scheme: dark;
+}
+
+@layer base {
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--color-night-canvas);
+  color: var(--color-primary-text);
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+::selection {
+  background: var(--color-lumen-wash);
+  color: var(--color-ink-bright);
+}
+
+/* Visible focus on every control: 2px Primary Text ring, 2px offset. */
+:focus-visible {
+  outline: 2px solid var(--color-primary-text);
+  outline-offset: 2px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-frost-300) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-frost-300);
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+}
+
+/* The CSS minifier drops the unprefixed backdrop-filter next to the -webkit- one, which leaves Chromium webviews
+   (Windows, Linux) without blur. Restating it under @supports keeps it in the shipped CSS. */
+@supports (backdrop-filter: blur(1px)) {
+  .glass,
+  .glass-bar,
+  .glass-card {
+    backdrop-filter: var(--lx-glass);
+  }
+}
+
+/* Sidebar vibrancy. Glass is only for the sidebar and the player bar. No rim, no border. */
+.glass {
+  background-color: rgba(24, 24, 27, 0.62);
+  /* Via a custom property: the CSS minifier otherwise drops the unprefixed declaration, and Chromium webviews need it. */
+  --lx-glass: blur(40px) saturate(1.8);
+  backdrop-filter: var(--lx-glass);
+  -webkit-backdrop-filter: var(--lx-glass);
+}
+
+.glass-bar {
+  background-color: rgba(10, 10, 12, 0.72);
+  /* Via a custom property: the CSS minifier otherwise drops the unprefixed declaration, and Chromium webviews need it. */
+  --lx-glass: blur(40px) saturate(1.6);
+  backdrop-filter: var(--lx-glass);
+  -webkit-backdrop-filter: var(--lx-glass);
+}
+
+/* Home and details cards: Frost 100 over a 1px inner rim (an inset shadow, not a border). Never on artwork. */
+.glass-card {
+  background-color: var(--color-frost-100);
+  /* Via a custom property: the CSS minifier otherwise drops the unprefixed declaration, and Chromium webviews need it. */
+  --lx-glass: blur(40px) saturate(1.5);
+  backdrop-filter: var(--lx-glass);
+  -webkit-backdrop-filter: var(--lx-glass);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .glass-bar,
+  .glass-card {
+    background-color: var(--color-surface);
+    --lx-glass: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+.glass-solid {
+  background-color: var(--color-elevated);
+}
+
+/* One stroke weight for every line icon. */
+svg.lucide {
+  stroke-width: 1.75;
+}
+
+/* Rails scroll sideways without a visible bar. */
+.lx-rail {
+  scrollbar-width: none;
+}
+
+.lx-rail::-webkit-scrollbar {
+  display: none;
+}
+
+/* Reduced motion: no animation, no transitions. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Hover-revealed play buttons stay reachable by keyboard: they also show on focus-within. */
+.lx-reveal {
+  opacity: 0;
+  transition: opacity 160ms var(--ease-lumen);
+}
+
+.lx-reveal-host:hover .lx-reveal,
+.lx-reveal-host:focus-within .lx-reveal {
+  opacity: 1;
+}
+
+/* Table number cell: the number gives way to the play button on hover and focus. */
+.lx-hide {
+  transition: opacity 160ms var(--ease-lumen);
+}
+
+.lx-reveal-host:hover .lx-hide,
+.lx-reveal-host:focus-within .lx-hide {
+  opacity: 0;
+}
+
+/* Now-playing equaliser: three Lumen Lavender bars, live state only. */
+.lx-eq {
+  display: inline-flex;
+  height: 14px;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.lx-eq i {
+  width: 3px;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--color-lumen-lavender);
+  transform-origin: bottom;
+  animation: lx-eq 900ms ease-in-out infinite alternate;
+}
+
+.lx-eq i:nth-child(2) {
+  animation-delay: -300ms;
+  animation-duration: 760ms;
+}
+
+.lx-eq i:nth-child(3) {
+  animation-delay: -600ms;
+  animation-duration: 1040ms;
+}
+
+@keyframes lx-eq {
+  from {
+    transform: scaleY(0.25);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+/* Scoped styling for screens whose markup is kept from the earlier build (Sync, Accounts, Connections, Player).
+   Their logic is unchanged; this gives them the same vocabulary as the rest: a large page title, gray group
+   headers, inset lists with hairline rows, and quiet buttons. */
+.lx-scope {
+  color: var(--color-primary-text);
+  font-size: 13px;
+  line-height: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.lx-scope > section,
+.lx-scope > section > article,
+.lx-scope section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lx-scope h2 {
+  font-family: var(--font-display);
+  font-size: 34px;
+  line-height: 40px;
+  font-weight: 700;
+  letter-spacing: -0.022em;
+  margin: 0;
+}
+
+.lx-scope h3 {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--color-secondary-text);
+  margin: 14px 0 0;
+  padding: 0 16px;
+}
+
+.lx-scope p {
+  margin: 0;
+  color: var(--color-secondary-text);
+  max-width: 72ch;
+}
+
+.lx-scope label,
+.lx-scope legend {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--color-secondary-text);
+}
+
+.lx-scope fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lx-scope form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lx-scope form > div,
+.lx-scope .toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.lx-scope input:not([type="radio"]):not([type="checkbox"]):not([type="range"]) {
+  height: 36px;
+  min-width: 0;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 9999px;
+  background: var(--color-frost-200);
+  color: var(--color-primary-text);
+}
+
+.lx-scope input::placeholder {
+  color: var(--color-tertiary-text);
+}
+
+.lx-scope input[type="radio"],
+.lx-scope input[type="checkbox"],
+.lx-scope input[type="range"] {
+  accent-color: var(--color-lumen-lavender);
+}
+
+.lx-scope select {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 0;
+  background: var(--color-frost-200);
+  color: var(--color-primary-text);
+}
+
+.lx-scope button {
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  background: var(--color-frost-200);
+  color: var(--color-primary-text);
+  font-weight: 500;
+  font-size: 13px;
+  align-self: flex-start;
+}
+
+.lx-scope button:hover:not(:disabled) {
+  background: var(--color-frost-300);
+}
+
+.lx-scope button[type="submit"] {
+  background: var(--color-primary-text);
+  color: var(--color-on-ink);
+  font-weight: 600;
+}
+
+.lx-scope button[type="submit"]:hover:not(:disabled) {
+  background: var(--color-ink-bright);
+}
+
+.lx-scope button:disabled {
+  opacity: 0.4;
+}
+
+.lx-scope [role="alert"],
+.lx-scope [role="note"] {
+  background: var(--color-frost-100);
+  border-radius: 10px;
+  padding: 10px 16px;
+  color: var(--color-primary-text);
+}
+
+/* Inset lists: rounded 10px, hairline between rows. */
+.lx-scope ul,
+.lx-scope dl {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--color-frost-100);
+}
+
+.lx-scope li {
+  padding: 10px 16px;
+  border-top: 1px solid var(--color-hairline);
+}
+
+.lx-scope li:first-child {
+  border-top: 0;
+}
+
+.lx-scope dl {
+  display: grid;
+  grid-template-columns: minmax(150px, 240px) 1fr;
+}
+
+.lx-scope dt,
+.lx-scope dd {
+  margin: 0;
+  padding: 10px 16px;
+  border-top: 1px solid var(--color-hairline);
+}
+
+.lx-scope dt:first-of-type,
+.lx-scope dt:first-of-type + dd {
+  border-top: 0;
+}
+
+.lx-scope dt {
+  color: var(--color-secondary-text);
+}
+
+.lx-scope dd {
+  color: var(--color-primary-text);
+}
+
+.lx-scope table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.lx-scope th,
+.lx-scope td {
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+  color: var(--color-primary-text);
+  border-top: 1px solid var(--color-hairline);
+}
+
+.lx-scope th {
+  color: var(--color-secondary-text);
+  font-weight: 600;
+  font-size: 12px;
+  border-top: 0;
+}
+
+/* Sidebar library list: fade the edges only while there is more to scroll (set from script via data-top/data-bottom). */
+.lx-fade {
+  --lx-fade-top: 0px;
+  --lx-fade-bottom: 0px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--lx-fade-top), #000 calc(100% - var(--lx-fade-bottom)), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 var(--lx-fade-top), #000 calc(100% - var(--lx-fade-bottom)), transparent 100%);
+}
+
+.lx-fade[data-top="1"] {
+  --lx-fade-top: 16px;
+}
+
+.lx-fade[data-bottom="1"] {
+  --lx-fade-bottom: 16px;
+}
+
+/* The live artwork supplies ambient color; motion follows actual playback. */
+.ln-native-ambient[data-playing="true"] {
+  animation: ln-artwork-drift 24s ease-in-out infinite alternate;
+}
+@keyframes ln-artwork-drift {
+  from { transform: scale(1.15) translate(-2%, -1%); }
+  to { transform: scale(1.3) translate(3%, 2%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ln-native-ambient[data-playing="true"] { animation: none; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .ln-native-ambient { display: none; }
+}
+
+/* settings-connections-accounts-sync-player */
+/* Pages built from the shared vocabulary (data-pg) opt out of the legacy .lx-scope rules: unlayered rules beat Tailwind
+   layers, so revert-layer hands styling back to utilities. Remove with .lx-scope once AppShell drops the wrapper. */
+.lx-scope [data-pg] *:not(svg, svg *) {
+  all: revert-layer;
+}
+
+/* motion */
+/* One authored feel (DESIGN.md, Motion). Durations: fast 150, base 220, slow 320, exit 120 ms. Ease: --ease-lumen.
+   The same tokens live in lib/motion.ts for Motion components. Only transform and opacity animate, with three
+   exceptions: the progress fill width, skeleton shimmer and the stroke draw. Reduced motion is handled at the end.
+   Rules marked "x3" repeat the class three times: pages under .lx-scope [data-pg] use `all: revert-layer`, which
+   would otherwise cancel them (specificity 0,2,1). */
+
+@keyframes lx-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes lx-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes lx-note {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes lx-pop-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes lx-np-in {
+  from { opacity: 0; transform: translateY(40px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes lx-ring {
+  from { outline-offset: 0; }
+  to { outline-offset: 2px; }
+}
+@keyframes lx-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes lx-shimmer {
+  to { transform: translateX(100%); }
+}
+@keyframes lx-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+/* Focus ring grows in over 100ms; it is visible from the first frame. */
+:focus-visible {
+  animation: lx-ring 100ms var(--ease-lumen);
+}
+
+/* Buttons: colour fades in 150ms, press scales to 0.97 in 100ms. (x3) */
+.lx-press.lx-press.lx-press {
+  transition:
+    background-color 150ms var(--ease-lumen),
+    color 150ms var(--ease-lumen),
+    opacity 150ms var(--ease-lumen),
+    transform 100ms var(--ease-lumen),
+    scale 150ms var(--ease-lumen);
+}
+.lx-press.lx-press.lx-press:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* First 12 children rise in, 30ms apart, once when the list mounts. Later children appear at once. */
+.lx-stagger > :nth-child(-n + 12) {
+  animation: lx-rise 220ms var(--ease-lumen) both;
+}
+.lx-stagger > :nth-child(2) { animation-delay: 30ms; }
+.lx-stagger > :nth-child(3) { animation-delay: 60ms; }
+.lx-stagger > :nth-child(4) { animation-delay: 90ms; }
+.lx-stagger > :nth-child(5) { animation-delay: 120ms; }
+.lx-stagger > :nth-child(6) { animation-delay: 150ms; }
+.lx-stagger > :nth-child(7) { animation-delay: 180ms; }
+.lx-stagger > :nth-child(8) { animation-delay: 210ms; }
+.lx-stagger > :nth-child(9) { animation-delay: 240ms; }
+.lx-stagger > :nth-child(10) { animation-delay: 270ms; }
+.lx-stagger > :nth-child(11) { animation-delay: 300ms; }
+.lx-stagger > :nth-child(12) { animation-delay: 330ms; }
+
+/* Content that replaces a skeleton, new artwork, ambient layers, sidebar labels, collapsed-mode tooltip. */
+.lx-enter { animation: lx-fade 320ms var(--ease-lumen) both; }
+.lx-fade-in { animation: lx-fade 220ms var(--ease-lumen) both; }
+.lx-ambient-in { animation: lx-fade 400ms var(--ease-lumen) both; }
+.lx-label { animation: lx-fade 140ms var(--ease-lumen) 90ms both; }
+.lx-tip { animation: lx-fade 120ms var(--ease-lumen) 300ms both; }
+
+/* Status messages and alerts: fade and 4px rise in 180ms. (x3) */
+.lx-note.lx-note.lx-note { animation: lx-note 180ms var(--ease-lumen) both; }
+
+/* Popover anchored top right (Add to playlist). */
+.lx-pop-in { animation: lx-pop-in 180ms var(--ease-lumen) both; transform-origin: 100% 0; }
+
+/* Native Now Playing dialog: rises from the player bar edge; the backdrop fades. */
+dialog.lx-np[open] { animation: lx-np-in 320ms var(--ease-lumen) both; transform-origin: 50% 100%; }
+dialog.lx-np[open]::backdrop { animation: lx-fade 320ms var(--ease-lumen) both; }
+
+/* Hover play button on tiles: scales in from the cover's lower left corner. */
+.lx-reveal.lx-reveal-pop {
+  transform: scale(0.85);
+  transform-origin: 0 100%;
+  transition:
+    opacity 160ms var(--ease-lumen),
+    transform 160ms var(--ease-lumen);
+}
+.lx-reveal-host:hover .lx-reveal.lx-reveal-pop,
+.lx-reveal-host:focus-within .lx-reveal.lx-reveal-pop {
+  transform: none;
+}
+
+/* Scrubber: progress eases linearly between ticks; while the pointer is held there is no transition at all. */
+.lx-fill { transition: width 250ms linear; }
+.lx-knob { transition: opacity 150ms var(--ease-lumen), left 250ms linear; }
+.lx-knob-drag { transition: opacity 150ms var(--ease-lumen); }
+
+/* Equaliser: only a real "playing" state animates. data-live="false" (buffering) freezes it. */
+.lx-eq[data-live="false"] i {
+  animation: none;
+  transform: scaleY(0.4);
+}
+
+/* Skeleton shimmer, 1.4s. (x3 on the parts that matter under revert-layer) */
+.lx-shimmer.lx-shimmer.lx-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.lx-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent);
+  animation: lx-shimmer 1.4s linear infinite;
+}
+
+/* Spinner, 700ms. Static under reduced motion; the text next to it carries the state. (x3) */
+.lx-spin.lx-spin.lx-spin { animation: lx-spin 700ms linear infinite; }
+
+/* Success tick draws in 240ms (the last path of the lucide check icon). (x3) */
+.lx-check.lx-check.lx-check path:last-child {
+  stroke-dasharray: 9;
+  stroke-dashoffset: 9;
+  animation: lx-draw 240ms var(--ease-lumen) 80ms forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :focus-visible,
+  .lx-stagger > *,
+  .lx-enter,
+  .lx-fade-in,
+  .lx-ambient-in,
+  .lx-label,
+  .lx-tip,
+  .lx-note.lx-note.lx-note,
+  .lx-pop-in,
+  dialog.lx-np[open],
+  dialog.lx-np[open]::backdrop,
+  .lx-shimmer::after,
+  .lx-spin.lx-spin.lx-spin {
+    animation: none !important;
+  }
+  .lx-shimmer::after { display: none; }
+  .lx-press.lx-press.lx-press:active:not(:disabled),
+  .lx-reveal.lx-reveal-pop { transform: none; }
+  .lx-eq i { animation: none !important; transform: scaleY(0.6); }
+  .lx-check.lx-check.lx-check path:last-child { stroke-dasharray: none; stroke-dashoffset: 0; animation: none !important; }
+}
+
+/* settings-categories */
+/* The Settings search field clears with Escape; hide the unthemed native cancel button. (x3: data-pg pages revert-layer) */
+[data-pg] input[type="search"].ln-sc-search.ln-sc-search.ln-sc-search::-webkit-search-cancel-button {
+  appearance: none;
+  display: none;
+}
+
+/* lyrics */
+/* Native Now Playing lyrics. Two layouts share one type system: Full window (lyrics fill the window, no panel) and Split (artwork left, lyrics right).
+   Size comes from --lyr-size on the region. Line change is 300ms on the Lumen ease; first lines rise in once.
+   Full window reserves the floating pill: lines are fully faded 140px above the bottom (pill top is at about 124px), the top fade clears the header cluster. */
+.ln-lyr-region { --lyr-size: clamp(40px, 3.9vw, 72px); --lyr-measure: 28em; position: relative; height: 100%; }
+.ln-lyr-region[data-layout="split"] { --lyr-size: clamp(28px, 2.4vw, 44px); --lyr-measure: 22em; }
+.ln-lyr-scroll {
+  container-type: size;
+  position: relative;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 clamp(24px, 4vw, 72px);
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, transparent 12%, #000 22%, #000 84%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, transparent 12%, #000 22%, #000 84%, transparent 100%);
+}
+/* --lyr-b is where the bottom fade ends. It reserves the pill while the controls show and gives the space back while they are hidden. */
+@property --lyr-b { syntax: "<length>"; inherits: false; initial-value: 140px; }
+.ln-lyr-region[data-layout="full"] .ln-lyr-scroll {
+  --lyr-b: 140px;
+  padding-left: max(var(--np-inset, 0px), clamp(24px, 4vw, 72px));
+  transition: --lyr-b 200ms var(--ease-lumen);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, transparent 120px, #000 176px, #000 calc(100% - var(--lyr-b) - 68px), transparent calc(100% - var(--lyr-b)));
+  mask-image: linear-gradient(to bottom, transparent 0, transparent 120px, #000 176px, #000 calc(100% - var(--lyr-b) - 68px), transparent calc(100% - var(--lyr-b)));
+}
+.ln-np-stage[data-idle="true"] .ln-lyr-region[data-layout="full"] .ln-lyr-scroll { --lyr-b: 24px; }
+.ln-lyr-scroll::-webkit-scrollbar { display: none; }
+.ln-lyr-region[data-layout="split"] .ln-lyr-scroll { padding-inline: 8px 12px; }
+.ln-lyr-plain { animation: lx-fade 320ms var(--ease-lumen) both; padding-top: 18cqh; }
+.ln-lyr-text {
+  width: min(var(--lyr-measure), 100%);
+  margin-inline: auto;
+  font-family: var(--font-display);
+  font-size: var(--lyr-size);
+  line-height: 1.3;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  white-space: pre-line;
+  overflow-wrap: break-word;
+}
+.ln-lyr-region[data-layout="split"] .ln-lyr-text { margin-inline: 0; }
+/* The first and last line can reach the follow position (40% of the height). */
+.ln-lyr-lead { height: 32cqh; }
+.ln-lyr-end { height: 60cqh; }
+/* Plain text: the last line must scroll above the pill's fade. */
+.ln-lyr-tail { height: 96px; }
+.ln-lyr-region[data-layout="full"] .ln-lyr-tail { height: 200px; }
+.ln-lyr-list {
+  width: min(var(--lyr-measure), 100%);
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
+  font-size: var(--lyr-size);
+}
+.ln-lyr-region[data-layout="split"] .ln-lyr-list { margin-inline: 0; }
+/* Distance falloff, CSS only so a line change re-renders just the active row. It sits on the line, not the item, so the gap dots keep their own
+   brightness. Neighbours 55%, then 38%, 30%, 22%, far lines 16%; a light blur from three away (1px, 2px beyond four). */
+.ln-lyr-item { padding-block: 0.1em; }
+.ln-lyr-item > .ln-lyr-line {
+  opacity: 0.16;
+  filter: blur(2px);
+  transition: opacity 300ms var(--ease-lumen), filter 300ms var(--ease-lumen), color 300ms var(--ease-lumen), transform 300ms var(--ease-lumen);
+}
+.ln-lyr-item:where([data-active="true"] + *, :has(+ [data-active="true"])) > .ln-lyr-line { opacity: 0.55; filter: none; }
+.ln-lyr-item:where([data-active="true"] + * + *, :has(+ * + [data-active="true"])) > .ln-lyr-line { opacity: 0.38; filter: none; }
+.ln-lyr-item:where([data-active="true"] + * + * + *, :has(+ * + * + [data-active="true"])) > .ln-lyr-line { opacity: 0.3; filter: blur(1px); }
+.ln-lyr-item:where([data-active="true"] + * + * + * + *, :has(+ * + * + * + [data-active="true"])) > .ln-lyr-line { opacity: 0.22; filter: blur(1px); }
+.ln-lyr-list[data-intro] .ln-lyr-item > .ln-lyr-line { opacity: 0.4; filter: none; }
+.ln-lyr-item[data-active="true"] > .ln-lyr-line { opacity: 1; filter: none; }
+.ln-lyr-list .ln-lyr-item:hover:not([data-active="true"]) > .ln-lyr-line:not(:disabled) { opacity: 0.8; filter: none; }
+/* Instrumental gap (timed lyrics only): above the line that comes next, three dots fill with the real clock and breathe while live.
+   The row is closed until the gap is live, grows once (300ms) and stays as a break once the line has started. Past rows open instantly. */
+.ln-lyr-gap { height: 0; overflow: hidden; display: flex; align-items: center; gap: 0.2em; padding-left: 0.06em; }
+.ln-lyr-gap[data-gap="open"] { height: 1.2em; }
+.ln-lyr-gap[data-gap="live"] { height: 1.2em; transition: height 300ms var(--ease-lumen); }
+.ln-lyr-gap i {
+  width: 0.26em;
+  height: 0.26em;
+  border-radius: 50%;
+  background: var(--color-primary-text);
+  opacity: 0;
+  transform-origin: center;
+  transition: opacity 300ms var(--ease-lumen);
+}
+.ln-lyr-gap[data-gap="live"] i { opacity: calc(0.25 + 0.75 * clamp(0, var(--p, 0) * 3 - var(--k), 1)); animation: ln-breathe 2400ms ease-in-out infinite; animation-delay: calc(var(--k) * 160ms); }
+.ln-lyr-gap i:nth-child(1) { --k: 0; }
+.ln-lyr-gap i:nth-child(2) { --k: 1; }
+.ln-lyr-gap i:nth-child(3) { --k: 2; }
+@keyframes ln-breathe { 0%, 100% { transform: scale(0.82); } 50% { transform: scale(1.12); } }
+/* First 8 lines rise in, 30ms apart, once on first display. The animation sits on the item so it never fights the button's lift. */
+.ln-lyr-item[data-enter] { animation: lx-rise 220ms var(--ease-lumen) backwards; animation-delay: calc(var(--lyr-i, 0) * 30ms); }
+.ln-lyr-item[data-enter="0"] { --lyr-i: 0; }
+.ln-lyr-item[data-enter="1"] { --lyr-i: 1; }
+.ln-lyr-item[data-enter="2"] { --lyr-i: 2; }
+.ln-lyr-item[data-enter="3"] { --lyr-i: 3; }
+.ln-lyr-item[data-enter="4"] { --lyr-i: 4; }
+.ln-lyr-item[data-enter="5"] { --lyr-i: 5; }
+.ln-lyr-item[data-enter="6"] { --lyr-i: 6; }
+.ln-lyr-item[data-enter="7"] { --lyr-i: 7; }
+.ln-lyr-line {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-display);
+  font-size: 1em;
+  line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  overflow-wrap: break-word;
+  text-wrap: pretty;
+  border-radius: 12px;
+  color: var(--color-primary-text);
+}
+.ln-lyr-line[aria-current="true"] { color: var(--color-ink-bright); transform: translateY(-2px); }
+/* Word highlight (real word timings only): sung words Primary Text, the current word Ink Bright with a small lift, upcoming words 55% (4.5:1 on the darkest and the brightest scrim). Colour and opacity only, no gradient text. */
+.ln-lyr-line[data-words] { color: var(--color-primary-text); }
+.ln-lyr-w {
+  display: inline-block;
+  transform-origin: bottom;
+  transition: color 200ms var(--ease-lumen), opacity 200ms var(--ease-lumen), transform 160ms ease-out;
+}
+.ln-lyr-w[data-w="next"] { opacity: 0.55; }
+.ln-lyr-w[data-w="cur"] { color: var(--color-ink-bright); transform: translateY(-1px) scale(1.03); }
+.ln-lyr-line:disabled { cursor: default; }
+.ln-lyr-back {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  translate: -50% 0;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary-text);
+  background: var(--color-frost-200);
+  animation: lx-note 180ms var(--ease-lumen) both;
+}
+.ln-lyr-region[data-layout="full"] .ln-lyr-back { bottom: 148px; }
+.ln-lyr-back:hover { background: var(--color-frost-300); }
+/* Estimated follow: the switch and the Reset button. Off-white means on; lavender stays reserved for live state. */
+.ln-lyr-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  font-size: 12px;
+  color: var(--color-secondary-text);
+}
+.ln-lyr-switch-track {
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--color-frost-300);
+  transition: background-color 200ms var(--ease-lumen);
+}
+.ln-lyr-switch-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--color-primary-text);
+  transition: transform 200ms var(--ease-lumen);
+}
+.ln-lyr-switch[aria-checked="true"] { color: var(--color-primary-text); }
+.ln-lyr-switch[aria-checked="true"] .ln-lyr-switch-track { background: var(--color-ink-bright); }
+.ln-lyr-switch[aria-checked="true"] .ln-lyr-switch-track::after { transform: translateX(12px); background: var(--color-night-canvas); }
+.ln-lyr-reset {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary-text);
+  background: var(--color-frost-200);
+}
+.ln-lyr-reset:hover { background: var(--color-frost-300); }
+/* Source selector: a segmented radiogroup. The chosen option is off-white on frost; lavender stays reserved for live state. */
+.ln-lyr-seg {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--color-frost-100);
+}
+.ln-lyr-seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--color-secondary-text);
+  transition: background-color 200ms var(--ease-lumen), color 200ms var(--ease-lumen);
+}
+.ln-lyr-seg-btn:hover:not(:disabled):not([aria-checked="true"]) { color: var(--color-primary-text); }
+.ln-lyr-seg-btn[aria-checked="true"] { background: var(--color-frost-300); color: var(--color-primary-text); }
+/* Icon-only options (layout toggle): the selected one is brighter and its glyph heavier; the others recede. */
+.ln-lyr-seg-btn[data-icon] { color: var(--color-tertiary-text, var(--color-secondary-text)); }
+.ln-lyr-seg-btn[data-icon][aria-checked="true"] { color: var(--color-ink-bright); }
+.ln-lyr-seg-btn[data-icon][aria-checked="true"] svg { stroke-width: 2.4; }
+.ln-lyr-seg-btn:disabled { opacity: 0.4; cursor: default; }
+.ln-lyr-opt {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--color-secondary-text);
+}
+.ln-lyr-opt:hover, .ln-lyr-opt[aria-expanded="true"] { background: var(--color-frost-200); color: var(--color-primary-text); }
+.ln-lyr-menu {
+  position: absolute;
+  bottom: 44px;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 190px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--color-elevated-deep);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ln-lyr-switch-track, .ln-lyr-switch-track::after, .ln-lyr-seg-btn { transition: none; }
+  .ln-lyr-item > .ln-lyr-line, .ln-lyr-item > .ln-lyr-line[aria-current="true"] { transform: none; transition: opacity 150ms linear, color 150ms linear; }
+  .ln-lyr-gap[data-gap="live"] { transition: none; }
+  .ln-lyr-gap[data-gap="live"] i { animation: none; }
+  .ln-lyr-gap i { transition: opacity 150ms linear; }
+  .ln-lyr-w, .ln-lyr-w[data-w="cur"] { transform: none; transition: color 150ms linear, opacity 150ms linear; }
+  .ln-lyr-item[data-enter], .ln-lyr-plain, .ln-lyr-back, .ln-np-skeleton > * { animation: none; }
+}
+/* No blur under reduced motion or reduced transparency. */
+@media (prefers-reduced-motion: reduce), (prefers-reduced-transparency: reduce) {
+  .ln-lyr-list .ln-lyr-item > .ln-lyr-line { filter: none; }
+}
+
+/* Lyrics source sheet: the "Source: <name>" button in the pill and the solid sheet it opens upward. Selected radio dot is Primary Text, never lavender. */
+.ln-src-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--color-primary-text);
+  background: var(--color-frost-100);
+}
+.ln-src-btn:hover, .ln-src-btn[aria-expanded="true"] { background: var(--color-frost-200); }
+.ln-src-sheet {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 14px);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  max-width: calc(100vw - 48px);
+  max-height: min(580px, calc(100dvh - 210px));
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--color-elevated-deep);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  font-size: 14px;
+  color: var(--color-primary-text);
+  animation: lx-note 180ms var(--ease-lumen) both;
+}
+.ln-src-head { display: flex; align-items: flex-start; gap: 8px; padding: 14px 12px 8px 16px; flex: none; }
+.ln-src-title { font-size: 15px; line-height: 20px; font-weight: 600; }
+.ln-src-quiet { font-size: 13px; line-height: 18px; color: var(--color-secondary-text); }
+.ln-src-sub { font-size: 12px; line-height: 16px; color: var(--color-secondary-text); }
+.ln-src-label { font-size: 14px; line-height: 20px; }
+.ln-src-icon { display: inline-grid; place-items: center; width: 40px; height: 40px; margin-top: -6px; border-radius: 10px; color: var(--color-secondary-text); flex: none; }
+.ln-src-icon:hover { background: var(--color-frost-200); color: var(--color-primary-text); }
+.ln-src-body { display: flex; flex-direction: column; gap: 8px; padding: 4px 8px 8px; overflow-y: auto; min-height: 0; }
+.ln-src-list { display: flex; flex-direction: column; gap: 2px; }
+.ln-src-row { display: flex; align-items: center; gap: 4px; border-radius: 10px; }
+.ln-src-row[data-auto] { background: var(--color-frost-100); margin-bottom: 6px; }
+.ln-src-radio { display: flex; flex: 1; min-width: 0; align-items: center; gap: 10px; min-height: 42px; padding: 4px 8px; border-radius: 10px; text-align: left; }
+.ln-src-radio:hover:not(:disabled) { background: var(--color-frost-100); }
+.ln-src-radio:disabled { color: var(--color-secondary-text); cursor: default; }
+.ln-src-dot { flex: none; width: 16px; height: 16px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--color-secondary-text); }
+.ln-src-radio[aria-checked="true"] .ln-src-dot { box-shadow: inset 0 0 0 2px var(--color-primary-text), inset 0 0 0 5px var(--color-elevated-deep), inset 0 0 0 9px var(--color-primary-text); }
+.ln-src-radio:disabled .ln-src-dot { opacity: 0.4; }
+.ln-src-state { display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 12px; color: var(--color-secondary-text); }
+.ln-src-badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; line-height: 16px; color: var(--color-primary-text); background: var(--color-frost-300); }
+.ln-src-mine { color: var(--color-primary-text); }
+.ln-src-link { display: inline-flex; align-items: center; gap: 4px; flex: none; min-height: 40px; padding: 0 8px; border-radius: 8px; font-size: 12px; font-weight: 600; color: var(--color-primary-text); }
+.ln-src-link:hover { background: var(--color-frost-200); }
+.ln-src-link[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+.ln-src-note { padding: 8px; border-radius: 10px; font-size: 12px; line-height: 16px; background: var(--color-frost-100); color: var(--color-primary-text); }
+.ln-src-said { min-height: 0; padding: 0 8px; font-size: 12px; line-height: 16px; color: var(--color-secondary-text); }
+.ln-src-said:empty { display: none; }
+.ln-src-timing { display: flex; flex: none; align-items: center; gap: 12px; padding: 8px 8px 8px 12px; margin: 0 8px 8px; border-radius: 10px; background: var(--color-frost-100); }
+.ln-src-stepper { display: inline-flex; align-items: center; border-radius: 999px; background: var(--color-frost-200); }
+.ln-src-stepper button { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; color: var(--color-primary-text); touch-action: none; }
+.ln-src-stepper button:hover:not(:disabled) { background: var(--color-frost-300); }
+.ln-src-stepper button:disabled { opacity: 0.4; }
+.ln-src-offset { min-width: 64px; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+.ln-src-search { display: flex; align-items: center; gap: 10px; flex: none; min-height: 48px; padding: 0 16px; font-size: 14px; background: var(--color-frost-100); }
+.ln-src-search:hover { background: var(--color-frost-200); }
+.ln-src-field { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: 10px; background: var(--color-frost-200); }
+.ln-src-field:focus-within { background: var(--color-frost-300); }
+.ln-src-field input { flex: 1; min-width: 0; height: 100%; font-size: 14px; color: var(--color-primary-text); background: transparent; }
+.ln-src-field input:focus-visible { outline: none; }
+.ln-src-field input::placeholder { color: var(--color-tertiary-text); }
+.ln-src-results { display: flex; flex-direction: column; gap: 2px; }
+.ln-src-hit { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 6px 8px; border-radius: 10px; text-align: left; font-size: 14px; }
+.ln-src-hit:hover { background: var(--color-frost-100); }
+.ln-src-hit[aria-disabled="true"] { opacity: 0.6; cursor: default; }
+.ln-src-skel { display: flex; flex-direction: column; gap: 10px; padding: 8px; }
+.ln-src-skel > * { height: 18px; border-radius: 8px; background: var(--color-frost-200); }
+.ln-src-skel > *:nth-child(odd) { width: 80%; }
+.ln-src-btn:focus-visible, .ln-src-icon:focus-visible, .ln-src-radio:focus-visible, .ln-src-link:focus-visible, .ln-src-stepper button:focus-visible, .ln-src-search:focus-visible, .ln-src-hit:focus-visible { outline: 2px solid var(--color-primary-text); outline-offset: -2px; }
+.ln-src-field:has(input:focus-visible) { outline: 2px solid var(--color-primary-text); outline-offset: -2px; }
+@media (prefers-reduced-motion: reduce) { .ln-src-sheet { animation: none; } }
+
+/* now-playing-chrome */
+/* Native Now Playing chrome: the floating controls pill and the notes under the artist line. In Full window the pill and the close
+   button fade after 3s without input while playing (data-idle); the notes (honesty labels) never hide. */
+.ln-np-ambient-scrim { background: rgba(0, 0, 0, var(--np-scrim, 0.65)); }
+/* Scrim per layout: Full has text over the art (darkest), Split pairs a cover with lyrics, Page lets the art glow. */
+dialog.lx-np[data-np-layout="full"] { --np-scrim: 0.78; }
+dialog.lx-np[data-np-layout="split"] { --np-scrim: 0.66; }
+dialog.lx-np[data-np-layout="page"] { --np-scrim: 0.5; }
+.ln-np-chrome { transition: opacity 200ms var(--ease-lumen); }
+.ln-np-stage[data-idle="true"] .ln-np-chrome:not(:has(:focus-visible)) { opacity: 0; pointer-events: none; }
+.ln-np-stage[data-idle="true"][data-layout="full"] { cursor: none; }
+.ln-np-stage[data-idle="true"][data-layout="full"] * { cursor: none; }
+.ln-np-pill {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(680px, calc(100% - 48px));
+  padding: 12px 16px;
+  border-radius: 24px;
+  background: rgba(20, 20, 28, 0.84);
+  -webkit-backdrop-filter: blur(32px) saturate(1.5);
+  backdrop-filter: blur(32px) saturate(1.5);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .ln-np-pill { background: var(--color-elevated-deep); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+.ln-np-pill-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; }
+.ln-np-pill .ln-lyr-opt { width: 36px; height: 36px; }
+.ln-np-pill .ln-lyr-seg-btn { height: 32px; }
+.ln-np-pill .ln-lyr-seg { padding: 2px; }
+.ln-np-pill .ln-lyr-menu .ln-lyr-switch { min-height: 36px; }
+.ln-np-notes { text-shadow: 0 0 10px rgba(0, 0, 0, 0.7); display: flex; flex-direction: column; gap: 2px; max-width: 360px; margin-top: 2px; }
+.ln-np-note { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; line-height: 16px; color: var(--color-secondary-text); }
+.ln-np-meta { display: block; }
+.ln-np-meta::first-letter { text-transform: uppercase; }
+.ln-np-flag { color: var(--color-primary-text); cursor: help; }
+.ln-np-flag svg { display: inline; margin-left: 4px; vertical-align: -2px; }
+.ln-np-skeleton > * { height: 0.9em; border-radius: 8px; background: var(--color-frost-200); }
+.ln-np-skeleton > *:nth-child(1) { width: 72%; }
+.ln-np-skeleton > *:nth-child(2) { width: 88%; }
+.ln-np-skeleton > *:nth-child(3) { width: 54%; }
+.ln-np-skeleton > *:nth-child(4) { width: 80%; }
+.ln-np-skeleton > *:nth-child(5) { width: 66%; }
+.ln-np-skeleton > *:nth-child(6) { width: 76%; }
+
+/* lyric-maker */
+/* Lyric Maker: a full-window layer inside Now Playing. Same type system as the full-window lyrics: big Display type straight on the
+   ambient background, a tabular gray time column at the left, no panels. Lavender is not used here: nothing in the maker is a live state
+   except the song clock, which stays Primary Text. */
+.ln-mk { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; background: rgba(4, 4, 8, 0.78); color: var(--color-primary-text); outline: none; }
+@media (prefers-reduced-transparency: reduce) { .ln-mk { background: var(--color-night-canvas); } }
+.ln-mk-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 6px 28px 0 max(var(--mk-inset, 76px), 28px); }
+.ln-mk-saved { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 0; padding-top: 4px; }
+.ln-mk-status { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; line-height: 20px; color: var(--color-secondary-text); font-variant-numeric: tabular-nums; }
+.ln-mk-err { display: flex; align-items: center; gap: 12px; max-width: 420px; font-size: 13px; line-height: 18px; color: var(--color-critical-coral); text-align: right; }
+.ln-mk-path { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--color-secondary-text); padding-right: 4px; }
+.ln-mk-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 8px; font-size: 12px; color: var(--color-secondary-text); background: var(--color-frost-100); white-space: nowrap; }
+.ln-mk-chip:hover { background: var(--color-frost-200); color: var(--color-primary-text); }
+.ln-mk-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--color-secondary-text); white-space: nowrap; transition: background-color 150ms var(--ease-lumen), color 150ms var(--ease-lumen); }
+.ln-mk-btn:hover:not(:disabled) { background: var(--color-frost-200); color: var(--color-primary-text); }
+.ln-mk-btn:disabled { opacity: 0.4; }
+.ln-mk-btn-solid { background: var(--color-frost-300); color: var(--color-primary-text); font-weight: 600; }
+.ln-mk-btn-solid:hover:not(:disabled) { background: rgba(255, 255, 255, 0.2); }
+.ln-mk-listwrap { position: relative; flex: 1 1 0; min-height: 0; display: flex; }
+.ln-mk-list {
+  flex: 1; min-height: 0; margin: 0; list-style: none; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+  padding: 36px 28px 20px max(var(--mk-inset, 76px), 28px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 28px, #000 calc(100% - 20px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 28px, #000 calc(100% - 20px), transparent 100%);
+}
+.ln-mk-list::-webkit-scrollbar { display: none; }
+.ln-mk-empty { align-self: center; max-width: 34em; margin: 0 28px 0 max(var(--mk-inset, 76px), 28px); font-family: var(--font-display); font-size: clamp(22px, 2vw, 30px); line-height: 1.3; font-weight: 600; letter-spacing: -0.01em; color: var(--color-secondary-text); }
+.ln-mk-empty .ln-mk-btn { font-family: var(--font-sans, inherit); }
+.ln-mk-row { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; align-items: baseline; gap: 0 16px; padding-block: 0.12em; max-width: 1000px; font-size: clamp(26px, 2.5vw, 42px); }
+.ln-mk-gap { height: 0.6em; }
+.ln-mk-time { font-size: 15px; line-height: 1.2; font-variant-numeric: tabular-nums; color: var(--color-tertiary-text); white-space: nowrap; }
+.ln-mk-time[data-empty] { opacity: 0.6; }
+.ln-mk-line { display: block; width: 100%; text-align: left; font-family: var(--font-display); font-size: 1em; line-height: 1.22; font-weight: 700; letter-spacing: -0.02em; overflow-wrap: anywhere; text-wrap: pretty; border-radius: 10px; color: var(--color-primary-text); opacity: 0.62; transition: opacity 200ms var(--ease-lumen); }
+.ln-mk-row:hover .ln-mk-line, .ln-mk-row:focus-within .ln-mk-line { opacity: 0.9; }
+.ln-mk-row[data-current] .ln-mk-line, .ln-mk-row[data-cursor] .ln-mk-line { opacity: 1; color: var(--color-ink-bright); }
+.ln-mk-row[data-cursor] .ln-mk-time { color: var(--color-primary-text); }
+.ln-mk-edit { width: 100%; font: inherit; font-family: var(--font-display); font-size: 1em; font-weight: 700; letter-spacing: -0.02em; line-height: 1.22; color: var(--color-ink-bright); background: var(--color-frost-200); border-radius: 10px; padding: 0 8px; margin-left: -8px; }
+.ln-mk-tools { display: inline-flex; align-items: center; gap: 2px; font-size: 14px; opacity: 0; transition: opacity 150ms var(--ease-lumen); }
+.ln-mk-row:hover .ln-mk-tools, .ln-mk-row:focus-within .ln-mk-tools { opacity: 1; }
+.ln-mk-nudge { display: inline-grid; place-items: center; min-width: 32px; height: 32px; padding: 0 6px; border-radius: 8px; color: var(--color-secondary-text); font-size: 12px; }
+.ln-mk-nudge:hover:not(:disabled) { background: var(--color-frost-200); color: var(--color-primary-text); }
+.ln-mk-nudge:disabled { opacity: 0.4; }
+.ln-mk-nudge-text { padding: 0 10px; }
+.ln-mk-input { padding: 8px 28px 0 max(var(--mk-inset, 76px), 28px); max-width: calc(1000px + max(var(--mk-inset, 76px), 28px) + 28px); }
+/* Type along: the newest line sits just above the field, like a transcript; the margin collapses once the list overflows. */
+.ln-mk[data-mode="type"] .ln-mk-list { display: flex; flex-direction: column; }
+.ln-mk[data-mode="type"] .ln-mk-list > :first-child { margin-top: auto; }
+.ln-mk-hint { font-size: 12px; line-height: 16px; color: var(--color-secondary-text); margin: 4px 0 0; }
+.ln-mk-field-row { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; align-items: center; gap: 16px; min-height: 56px; }
+.ln-mk-pending { font-size: 16px; font-variant-numeric: tabular-nums; color: var(--color-tertiary-text); white-space: nowrap; }
+.ln-mk-pending[data-set] { color: var(--color-primary-text); }
+.ln-mk-field { width: 100%; height: 56px; padding: 0 16px; border-radius: 12px; background: var(--color-frost-200); font-family: var(--font-display); font-size: clamp(24px, 2.2vw, 34px); font-weight: 700; letter-spacing: -0.02em; color: var(--color-ink-bright); caret-color: var(--color-ink-bright); }
+.ln-mk-field::placeholder { color: var(--color-tertiary-text); font-weight: 600; }
+.ln-mk-field:focus { background: var(--color-frost-300); }
+.ln-mk-next { font-family: var(--font-display); font-size: clamp(24px, 2.2vw, 34px); font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; overflow-wrap: anywhere; }
+.ln-mk-clock { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--color-primary-text); min-width: 5.6em; text-align: right; }
+.ln-mk-dock { display: flex; justify-content: center; padding: 12px 0 24px; }
+.ln-mk-pill { width: min(760px, calc(100% - 48px)); }
+.ln-mk-pill .ln-lyr-seg-btn { padding: 0 10px; }
+.ln-mk-keys { left: 0; right: auto; width: 340px; min-width: 340px; padding: 12px 16px; }
+.ln-mk-scrim { position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(0, 0, 0, 0.55); padding: 24px; }
+.ln-mk-sheet { width: min(560px, 100%); max-height: 100%; overflow-y: auto; padding: 28px; border-radius: 20px; background: var(--color-elevated-deep); box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6); outline: none; animation: lx-note 180ms var(--ease-lumen) both; }
+.ln-mk-paste { width: 100%; margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: var(--color-frost-200); font-size: 15px; line-height: 1.5; color: var(--color-primary-text); resize: vertical; }
+.ln-mk-paste:focus { background: var(--color-frost-300); }
+.ln-mk-step { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; color: var(--color-secondary-text); background: var(--color-frost-100); }
+.ln-mk-step:hover { background: var(--color-frost-200); color: var(--color-primary-text); }
+@media (prefers-reduced-motion: reduce) {
+  .ln-mk-sheet { animation: none; }
+  .ln-mk-line, .ln-mk-tools, .ln-mk-btn { transition: none; }
+}
+
+/* text-style: per-zone fonts and motion (Settings > General > Text style). Fonts come from --lx-font-<zone>, set by lib/textStyle.ts. */
+.ln-lyr-region .ln-lyr-line.ln-lyr-line, .ln-lyr-region .ln-lyr-text.ln-lyr-text { font-family: var(--lx-font-lyrics, var(--font-display)); }
+.ln-np-title.ln-np-title { font-family: var(--lx-font-title, var(--font-display)); }
+.lx-fx-w { display: inline-block; white-space: pre; }
+.lx-fx-c { display: inline-block; white-space: pre; }
+.lx-fx[data-fx="blur"] .lx-fx-w { animation: lx-fx-blur 520ms var(--ease-lumen) both; animation-delay: calc(var(--i) * 70ms); }
+.lx-fx[data-fx="typewriter"] .lx-fx-c { animation: lx-fx-type 1ms both; animation-delay: calc(var(--i) * 38ms); opacity: 0; }
+.lx-fx[data-fx="wave"][data-playing="true"] .lx-fx-c { animation: lx-fx-wave 1400ms ease-in-out infinite; animation-delay: calc(var(--i) * 70ms); }
+.lx-fx-shiny {
+  background-image: linear-gradient(110deg, rgba(255, 255, 255, 0.55) 35%, #fff 50%, rgba(255, 255, 255, 0.55) 65%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: lx-fx-shiny 2600ms linear infinite;
+}
+@keyframes lx-fx-blur { from { opacity: 0; filter: blur(8px); transform: translateY(0.25em); } to { opacity: 1; filter: blur(0); transform: none; } }
+@keyframes lx-fx-type { to { opacity: 1; } }
+@keyframes lx-fx-wave { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-0.14em); } }
+@keyframes lx-fx-shiny { from { background-position: 125% 0; } to { background-position: -125% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .lx-fx .lx-fx-w, .lx-fx .lx-fx-c { animation: none !important; opacity: 1 !important; filter: none !important; transform: none !important; }
+  .lx-fx-shiny { animation: none; background: none; color: inherit; }
+}
+
+/* text-style effects (generated list; see lib/textStyle.ts EFFECTS). Units: word, char, whole. Looping effects pause while paused. */
+.lx-fx[data-fx="fadeUp"] .lx-fx-w{animation:lx-fx-fadeUp 520ms var(--ease-lumen) both;animation-delay:calc(var(--i,0)*70ms);}
+@keyframes lx-fx-fadeUp{from{opacity:0;transform:translateY(.6em)}to{opacity:1;transform:none;filter:none;letter-spacing:0;clip-path:inset(0)}}
+.lx-fx[data-fx="fadeDown"] .lx-fx-w{animation:lx-fx-fadeDown 520ms var(--ease-lumen) both;animation-delay:calc(var(--i,0)*70ms);}
+@keyframes lx-fx-fadeDown{from{opacity:0;transform:translateY(-.6em)}to{opacity:1;transform:none;filter:none;letter-spacing:0;clip-path:inset(0)}}
+.lx-fx[data-fx="slideLeft"] .lx-fx-w{animation:lx-fx-slideLeft 520ms var(--ease-lumen) both;animation-delay:calc(var(--i,0)*70ms);}
+@keyframes lx-fx-slideLeft{from{opacity:0;transform:translateX(-.8em)}to{opacity:1;transform:none;filter:none;letter-spacing:0;clip-path:inset(0)}}
+.lx-fx[data-fx="slideRight"] .lx-fx-w{animation:lx-fx-slideRight 520ms var(--ease-lumen) both;animation-delay:calc(var(--i,0)*70ms);}
+@keyframes lx-fx-slideRight{from{opacity:0;transform:translateX(.8em)}to{opacity:1;transform:none;filter:none;letter-spacing:0;clip-path:inset(0)}}
+.lx-fx[data-fx="zoomIn"] .lx-fx-w{animation:lx-fx-zoomIn 460ms var(--ease-lumen) both;animation-delay:calc(var(--i,0)*70ms);}
+@keyframes lx-fx-zoomIn{from{opacity:0;transform:scale(.4)}to{opacity:1;transform:none;filter:none;letter-spacing:0;clip-path:inset(0)}}
+.lx-fx[data-fx="zoomOut"] .lx-fx-w{animation:lx-fx-zoomOut 460ms var(--ease-lumen) both;animation-delay:calc(var(--i,0)*70ms);}
+@keyframes lx-fx-zoomOut{from{opacity:0;transform:scale(1.8)}to{opacity:1;transform:none;filter:none;letter-spacing:0;clip-path:inset(0)}}
+.lx-fx[data-fx="pop"] .lx-fx-c{animation:lx-fx-pop 520ms var(--ease-lumen) both;animation-delay:calc(var(--i,0)*35ms);}
+@keyframes lx-fx-pop{0%{opacity:0;transform:scale(0)}60%{opacity:1;transform:scale(1.25)}100%{opacity:1;transform:scale(1)}}
+.lx-fx[data-fx="drop"] .lx-fx-c{animation:lx-fx-drop 720ms var(--ease-lumen) both;animation-delay:calc(var(--i,0)*40ms);}
+@keyframes lx-fx-drop{0%{opacity:0;transform:translateY(-1.2em)}60%{opacity:1;transform:translateY(.12em)}80%{transform:translateY(-.05em)}100%{opacity:1;transform:none}}
+.lx-fx[data-fx="rise"] .lx-fx-c{animation:lx-fx-rise 480ms var(--ease-lumen) both;animation-delay:calc(var(--i,0)*35ms);}
+@keyframes lx-fx-rise{from{opacity:0;transform:translateY(1em)}to{opacity:1;transform:none;filter:none;letter-spacing:0;clip-path:inset(0)}}
+.lx-fx[data-fx="flipX"] .lx-fx-c{animation:lx-fx-flipX 560ms var(--ease-lumen) both;animation-delay:calc(var(--i,0)*40ms);}
+@keyframes lx-fx-flipX{from{opacity:0;transform:perspective(400px) rotateX(90deg)}to{opacity:1;transform:none;filter:none;letter-spacing:0;clip-path:inset(0)}}
+.lx-fx[data-fx="flipY"] .lx-fx-c{animation:lx-fx-flipY 560ms var(--ease-lumen) both;animation-delay:calc(var(--i,0)*40ms);}
+@keyframes lx-fx-flipY{from{opacity:0;transform:perspective(400px) rotateY(90deg)}to{opacity:1;transform:none;filter:none;letter-spacing:0;clip-path:inset(0)}}
+.lx-fx[data-fx="spin"] .lx-fx-c{animation:lx-fx-spin 560ms var(--ease-lumen) both;animation-delay:calc(var(--i,0)*40ms);}
+@keyframes lx-fx-spin{from{opacity:0;transform:rotate(-180deg) scale(.3)}to{opacity:1;transform:none;filter:none;letter-spacing:0;clip-path:inset(0)}}
+.lx-fx[data-fx="blurChar"] .lx-fx-c{animation:lx-fx-blurChar 480ms var(--ease-lumen) both;animation-delay:calc(var(--i,0)*35ms);}
+@keyframes lx-fx-blurChar{from{opacity:0;filter:blur(6px)}to{opacity:1;transform:none;filter:none;letter-spacing:0;clip-path:inset(0)}}
+.lx-fx[data-fx="fade"] .lx-fx-c{animation:lx-fx-fade 420ms var(--ease-lumen) both;animation-delay:calc(var(--i,0)*30ms);}
+@keyframes lx-fx-fade{from{opacity:0}to{opacity:1;transform:none;filter:none;letter-spacing:0;clip-path:inset(0)}}
+.lx-fx[data-fx="roll"] .lx-fx-c{animation:lx-fx-roll 600ms var(--ease-lumen) both;animation-delay:calc(var(--i,0)*40ms);}
+@keyframes lx-fx-roll{from{opacity:0;transform:translateY(2em);filter:blur(3px)}to{opacity:1;transform:none;filter:none;letter-spacing:0;clip-path:inset(0)}}
+.lx-fx-whole[data-fx="spread"]{animation:lx-fx-spread 800ms var(--ease-lumen) both;animation-delay:0ms;}
+@keyframes lx-fx-spread{from{opacity:0;letter-spacing:-.25em}to{opacity:1;transform:none;filter:none;letter-spacing:0;clip-path:inset(0)}}
+.lx-fx-whole[data-fx="squeeze"]{animation:lx-fx-squeeze 800ms var(--ease-lumen) both;animation-delay:0ms;}
+@keyframes lx-fx-squeeze{from{opacity:0;letter-spacing:.6em}to{opacity:1;transform:none;filter:none;letter-spacing:0;clip-path:inset(0)}}
+.lx-fx-whole[data-fx="focus"]{animation:lx-fx-focus 700ms var(--ease-lumen) both;animation-delay:0ms;}
+@keyframes lx-fx-focus{from{opacity:0;filter:blur(14px)}to{opacity:1;transform:none;filter:none;letter-spacing:0;clip-path:inset(0)}}
+.lx-fx-whole[data-fx="wipe"]{animation:lx-fx-wipe 700ms var(--ease-lumen) both;animation-delay:0ms;}
+@keyframes lx-fx-wipe{from{clip-path:inset(0 100% 0 0)}to{opacity:1;transform:none;filter:none;letter-spacing:0;clip-path:inset(0)}}
+.lx-fx-whole[data-fx="wipeUp"]{animation:lx-fx-wipeUp 700ms var(--ease-lumen) both;animation-delay:0ms;}
+@keyframes lx-fx-wipeUp{from{clip-path:inset(100% 0 0 0)}to{opacity:1;transform:none;filter:none;letter-spacing:0;clip-path:inset(0)}}
+.lx-fx-whole[data-fx="curtain"]{animation:lx-fx-curtain 700ms var(--ease-lumen) both;animation-delay:0ms;}
+@keyframes lx-fx-curtain{from{clip-path:inset(0 50% 0 50%)}to{opacity:1;transform:none;filter:none;letter-spacing:0;clip-path:inset(0)}}
+.lx-fx[data-fx="bounce"] .lx-fx-c{animation:lx-fx-bounce 2000ms ease-in-out infinite;animation-delay:calc(var(--i,0)*45ms);}
+@keyframes lx-fx-bounce{0%,100%{transform:translateY(0) scaleY(1)}30%{transform:translateY(-.3em) scaleY(1.1)}50%{transform:translateY(0) scaleY(.88)}70%{transform:translateY(0) scaleY(1)}}
+.lx-fx[data-fx="float"] .lx-fx-c{animation:lx-fx-float 3200ms ease-in-out infinite;animation-delay:calc(var(--i,0)*120ms);}
+@keyframes lx-fx-float{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-.18em) rotate(2deg)}}
+.lx-fx[data-fx="swing"] .lx-fx-c{transform-origin:50% 0;animation:lx-fx-swing 2400ms ease-in-out infinite;animation-delay:calc(var(--i,0)*90ms);}
+@keyframes lx-fx-swing{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(5deg)}}
+.lx-fx[data-fx="colorWave"] .lx-fx-c{animation:lx-fx-colorWave 3000ms linear infinite;animation-delay:calc(var(--i,0)*110ms);}
+@keyframes lx-fx-colorWave{0%,100%{color:#c5b4ff}33%{color:#8fd3ff}66%{color:#ffb4d6}}
+.lx-fx-whole[data-fx="pulse"]{animation:lx-fx-pulse 2000ms ease-in-out infinite;animation-delay:0ms;}
+@keyframes lx-fx-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+.lx-fx-whole[data-fx="breathe"]{animation:lx-fx-breathe 3000ms ease-in-out infinite;animation-delay:0ms;}
+@keyframes lx-fx-breathe{0%,100%{opacity:1}50%{opacity:.55}}
+.lx-fx-whole[data-fx="rainbow"]{background-image:linear-gradient(90deg,#ff6b6b,#ffd93d,#6bff95,#6bd0ff,#c5b4ff,#ff6b6b);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:lx-fx-rainbow 4000ms linear infinite;animation-delay:0ms;}
+@keyframes lx-fx-rainbow{0%{background-position:0 0}100%{background-position:300% 0}}
+.lx-fx-whole[data-fx="flow"]{background-image:linear-gradient(90deg,#c5b4ff,#fff,#ffb4d6,#c5b4ff);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:lx-fx-flow 5000ms ease-in-out infinite;animation-delay:0ms;}
+@keyframes lx-fx-flow{0%,100%{background-position:0 0}50%{background-position:100% 0}}
+.lx-fx-whole[data-fx="neon"]{color:#fff;animation:lx-fx-neon 2400ms ease-in-out infinite;animation-delay:0ms;}
+@keyframes lx-fx-neon{0%,100%{text-shadow:0 0 4px #fff,0 0 12px #c5b4ff,0 0 28px #c5b4ff}50%{text-shadow:0 0 2px #fff,0 0 6px #c5b4ff,0 0 12px #c5b4ff}}
+.lx-fx-whole[data-fx="glitch"]{animation:lx-fx-glitch 3200ms steps(1,end) infinite;animation-delay:0ms;}
+@keyframes lx-fx-glitch{0%,88%,100%{transform:none;text-shadow:none}90%{transform:translateX(-2px);text-shadow:2px 0 #ff3b6b,-2px 0 #3bf0ff}93%{transform:translateX(2px);text-shadow:-2px 0 #ff3b6b,2px 0 #3bf0ff}96%{transform:translate(-1px,1px);text-shadow:1px 0 #ff3b6b,-1px 0 #3bf0ff}}
+.lx-fx-whole[data-fx="flicker"]{animation:lx-fx-flicker 3000ms steps(1,end) infinite;animation-delay:0ms;}
+@keyframes lx-fx-flicker{0%,100%{opacity:1}6%{opacity:.4}8%{opacity:1}52%{opacity:1}54%{opacity:.5}56%{opacity:1}58%{opacity:.6}60%{opacity:1}}
+.lx-fx-whole[data-fx="shake"]{animation:lx-fx-shake 3000ms linear infinite;animation-delay:0ms;}
+@keyframes lx-fx-shake{0%,88%,100%{transform:none}90%{transform:translateX(-3px)}92%{transform:translateX(3px)}94%{transform:translateX(-2px)}96%{transform:translateX(2px)}}
+.lx-fx-whole[data-fx="underline"]{background-image:linear-gradient(currentColor,currentColor);background-repeat:no-repeat;background-position:0 100%;padding-bottom:.08em;animation-direction:alternate;animation:lx-fx-underline 2600ms ease-in-out infinite;animation-delay:0ms;}
+@keyframes lx-fx-underline{0%{background-size:0 .08em}100%{background-size:100% .08em}}
+.lx-fx-whole[data-fx="outline"]{-webkit-text-stroke:1px var(--color-primary-text,#fff);animation-direction:alternate;animation:lx-fx-outline 3000ms ease-in-out infinite;animation-delay:0ms;}
+@keyframes lx-fx-outline{0%{color:transparent}100%{color:var(--color-primary-text,#fff)}}
+.lx-fx-whole{display:inline-block;max-width:100%;}
+.lx-fx-whole[data-loop="true"][data-playing="false"],.lx-fx[data-loop="true"][data-playing="false"] .lx-fx-c,.lx-fx[data-loop="true"][data-playing="false"] .lx-fx-w{animation-play-state:paused;}
+@media (prefers-reduced-motion: reduce){.lx-fx-whole{animation:none!important;opacity:1!important;filter:none!important;transform:none!important;clip-path:none!important;letter-spacing:normal!important;text-shadow:none!important;background:none!important;-webkit-text-stroke:0!important;color:inherit!important}}
+
+/* ---------- Mobile (iOS / Android) ---------- */
+/* Safe areas: the viewport is `cover`, so the shell pads itself around the notch, status bar and home indicator. */
+/* Android WebView reports env() as 0 when drawn edge to edge; the native plugin writes --sai-* instead (see MOBILE.md). */
+.ln-safe-top { padding-top: max(env(safe-area-inset-top), var(--sai-top, 0px)); }
+.ln-safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), var(--sai-bottom, 0px)); }
+.ln-safe-x { padding-left: max(env(safe-area-inset-left), var(--sai-left, 0px)); padding-right: max(env(safe-area-inset-right), var(--sai-right, 0px)); }
+/* 44 x 44 pt: Apple's minimum touch target, also above Android's 48 dp once padded. */
+.ln-touch { min-width: 44px; min-height: 44px; }
+html { -webkit-text-size-adjust: 100%; }
+body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+/* Text stays selectable where it is content, not chrome. */
+input, textarea, [contenteditable], .ln-selectable { -webkit-user-select: text; user-select: text; }
+@media (pointer: coarse) {
+  button, [role="button"], a { touch-action: manipulation; }
+  /* iOS zooms the page when a focused field is under 16px. */
+  input, textarea, select { font-size: 16px; }
+}
+
+/* Touch targets and sliders. A finger needs 44 pt and has no hover to reveal the slider knob. */
+@media (pointer: coarse) {
+  [data-ln-icon] { min-width: 44px; min-height: 44px; }
+  [data-ln-btn] { min-height: 44px; padding-inline: 16px; }
+  /* Chips, segmented tabs and the like are plain buttons inside the page. */
+  main button, main [role="tab"], main [role="radio"] { min-height: 44px; }
+  [data-ln-scrubber] { min-height: 44px; }
+  [data-ln-scrubber] > div[aria-hidden="true"] { height: 6px; }
+  /* The knob is the last child of the track; show it at rest and make it a finger-sized dot. */
+  [data-ln-scrubber] > div[aria-hidden="true"] > div:last-child { opacity: 1; width: 20px; height: 20px; }
+}

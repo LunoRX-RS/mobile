@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-player-skip"
+description = "Enables the player_skip command without any pre-configured scope."
+commands.allow = ["player_skip"]
+
+[[permission]]
+identifier = "deny-player-skip"
+description = "Denies the player_skip command without any pre-configured scope."
+commands.deny = ["player_skip"]

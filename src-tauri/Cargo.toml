@@ -1,0 +1,87 @@
+[package]
+name = "lunorx"
+version = "1.0.0-rc.3"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "lunorx_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+chrono-tz = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+rustypipe = { version = "0.11", default-features = false, features = ["rustls-tls-webpki-roots", "userdata"] }
+# YouTube and YouTube Music client shared with desktop. Playback resolution still uses rustypipe (core/playback).
+innerlight = { git = "https://github.com/LunoRX-RS/innerlight" }
+rand = "0.9"
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt", "sync", "time", "macros", "net", "io-util", "fs"] }
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
+
+# Desktop only: libmpv has no iOS/Android build, and single-instance has no meaning on a phone.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+libmpv2 = "4"
+tauri-plugin-single-instance = "=2.5.4"
+
+# iOS / Android only: audio output, lock-screen controls and Android Keystore secrets.
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-lunor-native = { path = "plugins/lunor-native" }
+# rquickjs (RustyPipe signature solver) ships no prebuilt bindings for iOS or Android; generate them at build time (needs libclang).
+rquickjs = { version = "0.9", default-features = false, features = ["bindgen"] }
+
+# Secrets: Keychain on macOS (and iOS, directly), Credential Manager, Secret Service. Android has no keyring backend (see platform::secret).
+# iOS talks to the Keychain directly to pick a protection class (see platform/ios_keyring.rs).
+[target.'cfg(target_os = "ios")'.dependencies]
+security-framework = "3"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+block2 = "0.6"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSApplication", "NSImage", "NSFontManager"] }
+objc2-core-foundation = { version = "0.3", default-features = false }
+objc2-foundation = "0.3"
+objc2-media-player = "0.3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }
+
+
+# rustypipe 0.11.4 plus one change: see vendor/rustypipe/PATCHES.md.
+[patch.crates-io]
+rustypipe = { path = "vendor/rustypipe" }
+
+# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+# unwind, not abort: a panicking provider adapter must become a Failed search group, not kill the app (blueprint 8.6).
+panic = "unwind"
+strip = true

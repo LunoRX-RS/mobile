@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-resolve-conflict"
+description = "Enables the sync_resolve_conflict command without any pre-configured scope."
+commands.allow = ["sync_resolve_conflict"]
+
+[[permission]]
+identifier = "deny-sync-resolve-conflict"
+description = "Denies the sync_resolve_conflict command without any pre-configured scope."
+commands.deny = ["sync_resolve_conflict"]

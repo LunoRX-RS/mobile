@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-playlist-entries"
+description = "Enables the sync_playlist_entries command without any pre-configured scope."
+commands.allow = ["sync_playlist_entries"]
+
+[[permission]]
+identifier = "deny-sync-playlist-entries"
+description = "Denies the sync_playlist_entries command without any pre-configured scope."
+commands.deny = ["sync_playlist_entries"]

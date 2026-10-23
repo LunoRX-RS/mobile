@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-stats-report"
+description = "Enables the stats_report command without any pre-configured scope."
+commands.allow = ["stats_report"]
+
+[[permission]]
+identifier = "deny-stats-report"
+description = "Denies the stats_report command without any pre-configured scope."
+commands.deny = ["stats_report"]

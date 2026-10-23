@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-youtube-import"
+description = "Enables the youtube_import command without any pre-configured scope."
+commands.allow = ["youtube_import"]
+
+[[permission]]
+identifier = "deny-youtube-import"
+description = "Denies the youtube_import command without any pre-configured scope."
+commands.deny = ["youtube_import"]

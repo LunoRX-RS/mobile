@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-rename-local-playlist"
+description = "Enables the sync_rename_local_playlist command without any pre-configured scope."
+commands.allow = ["sync_rename_local_playlist"]
+
+[[permission]]
+identifier = "deny-sync-rename-local-playlist"
+description = "Denies the sync_rename_local_playlist command without any pre-configured scope."
+commands.deny = ["sync_rename_local_playlist"]

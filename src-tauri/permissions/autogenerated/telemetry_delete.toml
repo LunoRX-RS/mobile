@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-telemetry-delete"
+description = "Enables the telemetry_delete command without any pre-configured scope."
+commands.allow = ["telemetry_delete"]
+
+[[permission]]
+identifier = "deny-telemetry-delete"
+description = "Denies the telemetry_delete command without any pre-configured scope."
+commands.deny = ["telemetry_delete"]

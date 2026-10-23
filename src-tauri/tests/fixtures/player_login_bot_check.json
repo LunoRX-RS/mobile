@@ -1,0 +1,10 @@
+{
+  "_note": "Hand-written player answer shaped like the service's bot challenge. Not a recording.",
+  "responseContext": {"visitorData": "CgtoYW5kd3JpdHRlbg%3D%3D"},
+  "playabilityStatus": {
+    "status": "LOGIN_REQUIRED",
+    "reason": "Sign in to confirm you’re not a bot",
+    "errorScreen": {"playerErrorMessageRenderer": {"reason": {"simpleText": "Sign in to confirm you’re not a bot"}}}
+  },
+  "videoDetails": {"videoId": "a_B-9zZ0-_x"}
+}

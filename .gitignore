@@ -1,0 +1,40 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+.next
+out
+next-env.d.ts
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Editor/tool caches (not source)
+.impeccable/
+*.tsbuildinfo
+.playwright-mcp/
+src-tauri/bg_snapshot.bin
+
+# Generated mobile projects and build output: they embed absolute paths of the machine that built them.
+src-tauri/gen/
+src-tauri/.cargo/
+plugins/lunor-native/android/build/
+plugins/lunor-native/android/.tauri/
+plugins/lunor-native/android/.gradle/

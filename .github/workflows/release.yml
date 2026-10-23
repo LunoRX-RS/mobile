@@ -1,0 +1,245 @@
+name: Release
+
+# Pushing a tag such as v1.0.0 or v1.0.0-rc.1 builds installers for every platform and publishes a GitHub Release.
+# Run it by hand (Actions > Release > Run workflow) to build the installers without publishing: they stay as workflow artifacts.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    name: Check version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          cargo_v="$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -n 1)"
+          npm_v="$(node -p "require('./package.json').version")"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag_v="${GITHUB_REF_NAME#v}"
+            if [ "$tag_v" != "$cargo_v" ] || [ "$tag_v" != "$npm_v" ]; then
+              echo "::error::Tag $GITHUB_REF_NAME does not match src-tauri/Cargo.toml ($cargo_v) and package.json ($npm_v). Bump both, commit, then tag again."
+              exit 1
+            fi
+          fi
+          echo "version=$cargo_v" >> "$GITHUB_OUTPUT"
+          case "$cargo_v" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+  # The same gates as CI, so a tag never ships code that fails them.
+  verify:
+    name: Verify
+    needs: version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev libdbus-1-dev libmpv-dev \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - name: cargo fmt --check
+        working-directory: src-tauri
+        run: cargo fmt --check
+      - name: cargo clippy
+        working-directory: src-tauri
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test --locked
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: [version, verify]
+    runs-on: ${{ matrix.os }}
+    # Linux and Windows installers have not been run on real machines yet. A failure there must not block the macOS release.
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macOS (Apple silicon), os: macos-latest, target: macos-arm64, experimental: false }
+          - { name: macOS (Intel), os: macos-15-intel, target: macos-x64, experimental: false }
+          - { name: Linux (x86_64), os: ubuntu-24.04, target: linux-amd64, experimental: true }
+          - { name: Windows (x86_64), os: windows-latest, target: windows-x64, experimental: true }
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      # Optional macOS signing and notarization. Without them the app is ad-hoc signed.
+      MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # tauri.conf.json runs `bun run build` before bundling.
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - run: npm ci
+
+      # ---------- macOS ----------
+      - name: Install libmpv and dylibbundler
+        if: runner.os == 'macOS'
+        run: brew install mpv dylibbundler
+
+      - name: Import signing certificate
+        if: runner.os == 'macOS' && env.APPLE_CERTIFICATE != ''
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p ci "$RUNNER_TEMP/ci.keychain"
+          security set-keychain-settings -lut 21600 "$RUNNER_TEMP/ci.keychain"
+          security unlock-keychain -p ci "$RUNNER_TEMP/ci.keychain"
+          security import "$RUNNER_TEMP/cert.p12" -k "$RUNNER_TEMP/ci.keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$RUNNER_TEMP/ci.keychain"
+          security list-keychains -d user -s "$RUNNER_TEMP/ci.keychain" login.keychain
+          rm "$RUNNER_TEMP/cert.p12"
+
+      - name: Build app (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          # Unset secrets are empty strings; Tauri would still try to import an empty certificate.
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD
+          fi
+          npx tauri build --bundles app
+
+      - name: Bundle libmpv and make the DMG
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist
+          scripts/release/bundle-macos.sh "$(find src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app' | head -n 1)" "dist/LunoRX_${VERSION}_${{ matrix.target }}.dmg"
+
+      # ---------- Linux ----------
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev libdbus-1-dev libmpv-dev \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Build installers (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          npx tauri build --bundles deb,appimage
+          mkdir -p dist
+          cp src-tauri/target/release/bundle/deb/*.deb "dist/LunoRX_${VERSION}_${{ matrix.target }}.deb"
+          cp src-tauri/target/release/bundle/appimage/*.AppImage "dist/LunoRX_${VERSION}_${{ matrix.target }}.AppImage"
+
+      # ---------- Windows ----------
+      # libmpv comes from the community build that publishes a development archive (import definition + DLL).
+      - name: Get libmpv (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $release = gh api repos/zhongfly/mpv-winbuild/releases/latest | ConvertFrom-Json
+          $asset = $release.assets | Where-Object { $_.name -match '^mpv-dev-x86_64-\d' } | Select-Object -First 1
+          if (-not $asset) { throw "No mpv-dev-x86_64 asset in the latest mpv-winbuild release" }
+          gh release download $release.tag_name --repo zhongfly/mpv-winbuild --pattern $asset.name --dir mpv-dev
+          7z x "mpv-dev/$($asset.name)" -ompv-dev/x
+          New-Item -ItemType Directory -Force src-tauri/mpv | Out-Null
+          Copy-Item mpv-dev/x/libmpv-2.dll src-tauri/mpv/libmpv-2.dll
+          "MPV_DEV_DIR=$((Resolve-Path mpv-dev/x).Path)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+
+      - name: Make the MSVC import library
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # The archive no longer ships mpv.def, so build it from the DLL's export table.
+          $exports = dumpbin /exports "$env:MPV_DEV_DIR\libmpv-2.dll" | ForEach-Object { if ($_ -match '^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]{8}\s+(mpv_\S+)') { $Matches[1] } }
+          if (-not $exports) { throw "No mpv_* exports found in libmpv-2.dll" }
+          "EXPORTS`n" + ($exports -join "`n") | Out-File -Encoding ascii "$env:MPV_DEV_DIR\mpv.def"
+          lib /def:"$env:MPV_DEV_DIR\mpv.def" /name:libmpv-2.dll /out:"$env:MPV_DEV_DIR\mpv.lib" /MACHINE:X64
+          "RUSTFLAGS=-L native=$env:MPV_DEV_DIR" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build installer (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # NSIS only: WiX rejects pre-release versions such as 1.0.0-rc.0. The DLL is installed next to the exe.
+          '{"bundle":{"resources":{"mpv/libmpv-2.dll":"libmpv-2.dll"}}}' | Out-File -Encoding ascii src-tauri/release-windows.json
+          npx tauri build --bundles nsis --config src-tauri/release-windows.json
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item (Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1) "dist/LunoRX_$($env:VERSION)_${{ matrix.target }}-setup.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: [version, build]
+    # Only for a pushed tag; a manual run keeps the installers as artifacts.
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum -- * | tee SHA256SUMS.txt
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          flag=""
+          [ "$PRERELEASE" = "true" ] && flag="--prerelease"
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "LunoRX ${GITHUB_REF_NAME#v}" \
+            --generate-notes --verify-tag $flag

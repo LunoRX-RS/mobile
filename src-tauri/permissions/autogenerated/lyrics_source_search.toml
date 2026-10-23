@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-lyrics-source-search"
+description = "Enables the lyrics_source_search command without any pre-configured scope."
+commands.allow = ["lyrics_source_search"]
+
+[[permission]]
+identifier = "deny-lyrics-source-search"
+description = "Denies the lyrics_source_search command without any pre-configured scope."
+commands.deny = ["lyrics_source_search"]

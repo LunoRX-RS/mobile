@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-remote-start"
+description = "Enables the remote_start command without any pre-configured scope."
+commands.allow = ["remote_start"]
+
+[[permission]]
+identifier = "deny-remote-start"
+description = "Denies the remote_start command without any pre-configured scope."
+commands.deny = ["remote_start"]

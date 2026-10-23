@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-lyrics-settings-set"
+description = "Enables the lyrics_settings_set command without any pre-configured scope."
+commands.allow = ["lyrics_settings_set"]
+
+[[permission]]
+identifier = "deny-lyrics-settings-set"
+description = "Denies the lyrics_settings_set command without any pre-configured scope."
+commands.deny = ["lyrics_settings_set"]

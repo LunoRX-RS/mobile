@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-discovery-genres"
+description = "Enables the discovery_genres command without any pre-configured scope."
+commands.allow = ["discovery_genres"]
+
+[[permission]]
+identifier = "deny-discovery-genres"
+description = "Denies the discovery_genres command without any pre-configured scope."
+commands.deny = ["discovery_genres"]

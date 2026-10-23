@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-search-cancel"
+description = "Enables the search_cancel command without any pre-configured scope."
+commands.allow = ["search_cancel"]
+
+[[permission]]
+identifier = "deny-search-cancel"
+description = "Denies the search_cancel command without any pre-configured scope."
+commands.deny = ["search_cancel"]

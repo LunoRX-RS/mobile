@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-youtube-disconnect"
+description = "Enables the youtube_disconnect command without any pre-configured scope."
+commands.allow = ["youtube_disconnect"]
+
+[[permission]]
+identifier = "deny-youtube-disconnect"
+description = "Denies the youtube_disconnect command without any pre-configured scope."
+commands.deny = ["youtube_disconnect"]

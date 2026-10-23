@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-upload-playlist"
+description = "Enables the sync_upload_playlist command without any pre-configured scope."
+commands.allow = ["sync_upload_playlist"]
+
+[[permission]]
+identifier = "deny-sync-upload-playlist"
+description = "Denies the sync_upload_playlist command without any pre-configured scope."
+commands.deny = ["sync_upload_playlist"]

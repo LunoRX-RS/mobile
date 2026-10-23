@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-revoke-share"
+description = "Enables the sync_revoke_share command without any pre-configured scope."
+commands.allow = ["sync_revoke_share"]
+
+[[permission]]
+identifier = "deny-sync-revoke-share"
+description = "Denies the sync_revoke_share command without any pre-configured scope."
+commands.deny = ["sync_revoke_share"]

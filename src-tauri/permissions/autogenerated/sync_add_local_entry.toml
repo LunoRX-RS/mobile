@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-add-local-entry"
+description = "Enables the sync_add_local_entry command without any pre-configured scope."
+commands.allow = ["sync_add_local_entry"]
+
+[[permission]]
+identifier = "deny-sync-add-local-entry"
+description = "Denies the sync_add_local_entry command without any pre-configured scope."
+commands.deny = ["sync_add_local_entry"]

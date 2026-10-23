@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-player-progress"
+description = "Enables the player_progress command without any pre-configured scope."
+commands.allow = ["player_progress"]
+
+[[permission]]
+identifier = "deny-player-progress"
+description = "Denies the player_progress command without any pre-configured scope."
+commands.deny = ["player_progress"]

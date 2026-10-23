@@ -1,0 +1,28 @@
+pub mod audio;
+pub mod command;
+pub mod engine;
+pub mod extract;
+pub mod host;
+#[cfg(desktop)]
+mod locale;
+pub mod lyrics;
+#[cfg(mobile)]
+pub mod mobile;
+#[cfg_attr(desktop, allow(dead_code))]
+// used by the mobile host only; built on desktop so its tests run in CI
+mod mobile_protocol;
+#[cfg(desktop)]
+pub mod native;
+mod proxy;
+pub mod state;
+pub mod track_info;
+
+pub mod cache;
+
+pub mod autoplay;
+
+mod lyrics_cache;
+
+pub mod lyric_prefs;
+
+pub mod lyric_sources;

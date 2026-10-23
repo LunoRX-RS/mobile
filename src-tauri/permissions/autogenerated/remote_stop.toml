@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-remote-stop"
+description = "Enables the remote_stop command without any pre-configured scope."
+commands.allow = ["remote_stop"]
+
+[[permission]]
+identifier = "deny-remote-stop"
+description = "Denies the remote_stop command without any pre-configured scope."
+commands.deny = ["remote_stop"]

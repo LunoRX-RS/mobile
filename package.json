@@ -1,0 +1,32 @@
+{
+  "name": "lunorx",
+  "private": true,
+  "version": "1.0.0-rc.3",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 1421 --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "next start",
+    "lint": "tsc --noEmit",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "lucide-react": "^1.61.0",
+    "motion": "^14.5.0",
+    "next": "^16.4.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tailwindcss": "^4.3.3",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "typescript": "~6.0.3"
+  }
+}

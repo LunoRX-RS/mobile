@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-providers-list"
+description = "Enables the providers_list command without any pre-configured scope."
+commands.allow = ["providers_list"]
+
+[[permission]]
+identifier = "deny-providers-list"
+description = "Denies the providers_list command without any pre-configured scope."
+commands.deny = ["providers_list"]

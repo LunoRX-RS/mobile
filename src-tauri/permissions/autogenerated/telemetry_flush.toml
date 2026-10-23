@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-telemetry-flush"
+description = "Enables the telemetry_flush command without any pre-configured scope."
+commands.allow = ["telemetry_flush"]
+
+[[permission]]
+identifier = "deny-telemetry-flush"
+description = "Denies the telemetry_flush command without any pre-configured scope."
+commands.deny = ["telemetry_flush"]

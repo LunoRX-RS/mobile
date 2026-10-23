@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-flush-pending"
+description = "Enables the sync_flush_pending command without any pre-configured scope."
+commands.allow = ["sync_flush_pending"]
+
+[[permission]]
+identifier = "deny-sync-flush-pending"
+description = "Denies the sync_flush_pending command without any pre-configured scope."
+commands.deny = ["sync_flush_pending"]

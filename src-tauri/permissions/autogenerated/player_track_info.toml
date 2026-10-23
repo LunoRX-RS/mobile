@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-player-track-info"
+description = "Enables the player_track_info command without any pre-configured scope."
+commands.allow = ["player_track_info"]
+
+[[permission]]
+identifier = "deny-player-track-info"
+description = "Denies the player_track_info command without any pre-configured scope."
+commands.deny = ["player_track_info"]

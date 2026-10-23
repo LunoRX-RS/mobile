@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-player-queue-edit"
+description = "Enables the player_queue_edit command without any pre-configured scope."
+commands.allow = ["player_queue_edit"]
+
+[[permission]]
+identifier = "deny-player-queue-edit"
+description = "Denies the player_queue_edit command without any pre-configured scope."
+commands.deny = ["player_queue_edit"]

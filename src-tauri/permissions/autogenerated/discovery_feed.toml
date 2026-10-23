@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-discovery-feed"
+description = "Enables the discovery_feed command without any pre-configured scope."
+commands.allow = ["discovery_feed"]
+
+[[permission]]
+identifier = "deny-discovery-feed"
+description = "Denies the discovery_feed command without any pre-configured scope."
+commands.deny = ["discovery_feed"]

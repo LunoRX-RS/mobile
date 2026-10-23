@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-remote-send"
+description = "Enables the remote_send command without any pre-configured scope."
+commands.allow = ["remote_send"]
+
+[[permission]]
+identifier = "deny-remote-send"
+description = "Denies the remote_send command without any pre-configured scope."
+commands.deny = ["remote_send"]

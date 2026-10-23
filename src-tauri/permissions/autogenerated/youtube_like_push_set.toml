@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-youtube-like-push-set"
+description = "Enables the youtube_like_push_set command without any pre-configured scope."
+commands.allow = ["youtube_like_push_set"]
+
+[[permission]]
+identifier = "deny-youtube-like-push-set"
+description = "Denies the youtube_like_push_set command without any pre-configured scope."
+commands.deny = ["youtube_like_push_set"]

@@ -1,0 +1,17 @@
+[package]
+name = "tauri-plugin-lunor-native"
+version = "0.1.0"
+authors = ["LunoRX contributors"]
+description = "iOS and Android bridge: audio output, lock-screen controls and Android Keystore secrets. Mobile only."
+edition = "2024"
+rust-version = "1.90"
+links = "tauri-plugin-lunor-native"
+license = "MIT"
+
+[dependencies]
+tauri = { version = "2" }
+serde = "1"
+thiserror = "2"
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-offline-set-limit"
+description = "Enables the offline_set_limit command without any pre-configured scope."
+commands.allow = ["offline_set_limit"]
+
+[[permission]]
+identifier = "deny-offline-set-limit"
+description = "Denies the offline_set_limit command without any pre-configured scope."
+commands.deny = ["offline_set_limit"]

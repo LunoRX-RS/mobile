@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-lrc-load"
+description = "Enables the lrc_load command without any pre-configured scope."
+commands.allow = ["lrc_load"]
+
+[[permission]]
+identifier = "deny-lrc-load"
+description = "Denies the lrc_load command without any pre-configured scope."
+commands.deny = ["lrc_load"]

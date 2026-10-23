@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-youtube-connect-finish"
+description = "Enables the youtube_connect_finish command without any pre-configured scope."
+commands.allow = ["youtube_connect_finish"]
+
+[[permission]]
+identifier = "deny-youtube-connect-finish"
+description = "Denies the youtube_connect_finish command without any pre-configured scope."
+commands.deny = ["youtube_connect_finish"]

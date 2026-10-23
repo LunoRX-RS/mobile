@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-telemetry-set"
+description = "Enables the telemetry_set command without any pre-configured scope."
+commands.allow = ["telemetry_set"]
+
+[[permission]]
+identifier = "deny-telemetry-set"
+description = "Denies the telemetry_set command without any pre-configured scope."
+commands.deny = ["telemetry_set"]

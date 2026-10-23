@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-remove-local-entry"
+description = "Enables the sync_remove_local_entry command without any pre-configured scope."
+commands.allow = ["sync_remove_local_entry"]
+
+[[permission]]
+identifier = "deny-sync-remove-local-entry"
+description = "Denies the sync_remove_local_entry command without any pre-configured scope."
+commands.deny = ["sync_remove_local_entry"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-list-local-playlists"
+description = "Enables the sync_list_local_playlists command without any pre-configured scope."
+commands.allow = ["sync_list_local_playlists"]
+
+[[permission]]
+identifier = "deny-sync-list-local-playlists"
+description = "Denies the sync_list_local_playlists command without any pre-configured scope."
+commands.deny = ["sync_list_local_playlists"]

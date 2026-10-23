@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-lrc-list"
+description = "Enables the lrc_list command without any pre-configured scope."
+commands.allow = ["lrc_list"]
+
+[[permission]]
+identifier = "deny-lrc-list"
+description = "Denies the lrc_list command without any pre-configured scope."
+commands.deny = ["lrc_list"]

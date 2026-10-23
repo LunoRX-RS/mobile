@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-library-clear-history"
+description = "Enables the library_clear_history command without any pre-configured scope."
+commands.allow = ["library_clear_history"]
+
+[[permission]]
+identifier = "deny-library-clear-history"
+description = "Denies the library_clear_history command without any pre-configured scope."
+commands.deny = ["library_clear_history"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-share-playlist"
+description = "Enables the sync_share_playlist command without any pre-configured scope."
+commands.allow = ["sync_share_playlist"]
+
+[[permission]]
+identifier = "deny-sync-share-playlist"
+description = "Denies the sync_share_playlist command without any pre-configured scope."
+commands.deny = ["sync_share_playlist"]

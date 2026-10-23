@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-search-query"
+description = "Enables the search_query command without any pre-configured scope."
+commands.allow = ["search_query"]
+
+[[permission]]
+identifier = "deny-search-query"
+description = "Denies the search_query command without any pre-configured scope."
+commands.deny = ["search_query"]

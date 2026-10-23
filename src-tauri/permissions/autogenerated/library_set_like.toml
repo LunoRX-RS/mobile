@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-library-set-like"
+description = "Enables the library_set_like command without any pre-configured scope."
+commands.allow = ["library_set_like"]
+
+[[permission]]
+identifier = "deny-library-set-like"
+description = "Denies the library_set_like command without any pre-configured scope."
+commands.deny = ["library_set_like"]

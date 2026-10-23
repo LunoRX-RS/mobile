@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-stats-cloud-sync"
+description = "Enables the stats_cloud_sync command without any pre-configured scope."
+commands.allow = ["stats_cloud_sync"]
+
+[[permission]]
+identifier = "deny-stats-cloud-sync"
+description = "Denies the stats_cloud_sync command without any pre-configured scope."
+commands.deny = ["stats_cloud_sync"]

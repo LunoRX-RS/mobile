@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-stats-cloud-clear"
+description = "Enables the stats_cloud_clear command without any pre-configured scope."
+commands.allow = ["stats_cloud_clear"]
+
+[[permission]]
+identifier = "deny-stats-cloud-clear"
+description = "Denies the stats_cloud_clear command without any pre-configured scope."
+commands.deny = ["stats_cloud_clear"]
