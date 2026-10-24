@@ -2,10 +2,10 @@ import { useReducedMotion, type Transition, type Variants } from "motion/react";
 
 // Motion tokens (DESIGN.md, Motion). One authored feel: short, quiet, exponential ease-out.
 // The CSS side lives under `/* motion */` in app/globals.css and uses the same numbers.
-export const DUR = { fast: 0.15, base: 0.22, slow: 0.32, exit: 0.12 } as const;
-export const EASE = [0.16, 1, 0.3, 1] as const;
+export const DUR = { fast: 0.18, base: 0.26, slow: 0.36, exit: 0.14 } as const;
+export const EASE = [0.22, 1, 0.36, 1] as const;
 // Sheets (Now Playing, queue). Damping ratio is about 0.95, so overshoot stays far below 2%.
-export const SPRING: Transition = { type: "spring", stiffness: 320, damping: 34, mass: 1 };
+export const SPRING: Transition = { type: "spring", stiffness: 280, damping: 30, mass: 1 };
 
 export const tween = (duration: number = DUR.base): Transition => ({ duration, ease: EASE });
 

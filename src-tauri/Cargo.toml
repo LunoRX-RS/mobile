@@ -22,8 +22,8 @@ base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 chrono-tz = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
-rustypipe = { version = "0.11", default-features = false, features = ["rustls-tls-webpki-roots", "userdata"] }
-# YouTube and YouTube Music client shared with desktop. Playback resolution still uses rustypipe (core/playback).
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+# YouTube and YouTube Music client shared with desktop.
 innerlight = { git = "https://github.com/LunoRX-RS/innerlight" }
 rand = "0.9"
 tauri = { version = "2", features = [] }
@@ -43,8 +43,6 @@ tauri-plugin-single-instance = "=2.5.4"
 # iOS / Android only: audio output, lock-screen controls and Android Keystore secrets.
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-lunor-native = { path = "plugins/lunor-native" }
-# rquickjs (RustyPipe signature solver) ships no prebuilt bindings for iOS or Android; generate them at build time (needs libclang).
-rquickjs = { version = "0.9", default-features = false, features = ["bindgen"] }
 
 # Secrets: Keychain on macOS (and iOS, directly), Credential Manager, Secret Service. Android has no keyring backend (see platform::secret).
 # iOS talks to the Keychain directly to pick a protection class (see platform/ios_keyring.rs).
@@ -71,11 +69,6 @@ objc2-media-player = "0.3"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }
-
-
-# rustypipe 0.11.4 plus one change: see vendor/rustypipe/PATCHES.md.
-[patch.crates-io]
-rustypipe = { path = "vendor/rustypipe" }
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
