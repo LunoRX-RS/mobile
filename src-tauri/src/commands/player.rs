@@ -1515,7 +1515,7 @@ mod tests {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioSettingsDto {
     settings: crate::core::playback::audio::AudioSettings,
@@ -1535,8 +1535,15 @@ pub fn player_audio_settings(state: State<'_, PlayerState>) -> AudioSettingsDto 
         available: state.available,
     }
 }
+/// The sound presets, in display order. One list for the settings panel and the macOS Sound menu.
+#[tauri::command]
+pub fn player_effect_presets() -> Vec<crate::core::playback::presets::Preset> {
+    crate::core::playback::presets::all()
+}
+
 #[tauri::command]
 pub fn player_set_audio_settings(
+    app: AppHandle,
     state: State<'_, PlayerState>,
     settings: crate::core::playback::audio::AudioSettings,
 ) -> Result<AudioSettingsDto, PlayerError> {
@@ -1548,5 +1555,6 @@ pub fn player_set_audio_settings(
         .settings
         .lock()
         .unwrap_or_else(|e| e.into_inner()) = settings;
+    crate::platform::sound_changed(&app);
     Ok(player_audio_settings(state))
 }

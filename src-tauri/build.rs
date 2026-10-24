@@ -74,6 +74,7 @@ fn main() {
             "sync_resolve_conflict",
             "player_audio_settings",
             "player_set_audio_settings",
+            "player_effect_presets",
             "player_state",
             "player_progress",
             "player_track_info",

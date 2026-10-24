@@ -37,6 +37,7 @@ import { DUR, tween } from "../../lib/motion";
 import { ContextMenuHost } from "../ContextMenu";
 import { loadFeed } from "../../lib/discovery";
 import { initYouTubeImport } from "../../lib/youtubeImport";
+import { applySavedAudio, watchAudioSettings } from "../../lib/audioSettings";
 import { applySavedMode } from "../../lib/playMode";
 import { initAppStyle, resetAppScale, stepAppScale } from "../../lib/appStyle";
 import { useLayout } from "../../lib/layout";
@@ -118,13 +119,15 @@ export default function AppShell() {
     hydrateRecentSearches();
     void refreshLikes();
     const stopImport = initYouTubeImport();
+    void applySavedAudio();
+    const stopAudio = watchAudioSettings();
     applySavedMode();
     initAppStyle();
     // Warm the first screens while the window is still settling: both feeds, and Explore's first topic.
     const warm = () => { void loadFeed("home"); void loadFeed("explore", "charts"); };
     const idle = (window as { requestIdleCallback?: (f: () => void) => number }).requestIdleCallback;
     if (idle) idle(warm); else window.setTimeout(warm, 300);
-    return stopImport;
+    return () => { stopImport(); stopAudio(); };
   }, []);
   const mainRef = useRef<HTMLElement>(null);
   const libraryError = useLibrary(s => s.error);

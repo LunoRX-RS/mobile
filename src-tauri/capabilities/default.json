@@ -62,6 +62,7 @@
     "allow-sync-resolve-conflict",
     "allow-player-audio-settings",
     "allow-player-set-audio-settings",
+    "allow-player-effect-presets",
     "allow-player-state",
     "allow-player-progress",
     "allow-player-track-info",

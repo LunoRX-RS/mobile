@@ -48,3 +48,6 @@ pub fn install(_app: &tauri::AppHandle) {}
 
 #[cfg(not(any(target_os = "macos", mobile)))]
 pub fn poke() {}
+
+/// The sound settings changed (from the settings panel): refresh the Sound menu's checks. Mobile has no Sound menu.
+pub fn sound_changed(_app: &tauri::AppHandle) {}

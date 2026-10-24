@@ -173,6 +173,7 @@ pub fn run() {
             commands::sync::sync_resolve_conflict,
             commands::player::player_audio_settings,
             commands::player::player_set_audio_settings,
+            commands::player::player_effect_presets,
             commands::player::player_state,
             commands::player::player_progress,
             commands::player::player_track_info,

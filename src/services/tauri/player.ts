@@ -182,11 +182,42 @@ export interface AudioSettings {
   pcmFormat: "int16" | "int32" | "float32";
   sampleRate: "auto" | "hz44100" | "hz48000" | "hz96000" | "hz192000";
   loudness: "off" | "balanced" | "loud";
+  effects: AudioEffects;
 }
+/** Sound shaping done by mpv's filters. Gains are whole dB, -12 to 12. */
+export interface AudioEffects {
+  enabled: boolean;
+  preamp: number;
+  /** 31, 62, 125, 250, 500 Hz, then 1, 2, 4, 8, 16 kHz. */
+  bands: number[];
+  bass: number;
+  treble: number;
+  /** 0 mono, 100 unchanged, 200 doubled. */
+  stereoWidth: number;
+  crossfeed: number;
+  reverb: "off" | "room" | "hall";
+  compressor: "off" | "light" | "medium" | "heavy";
+  /** Percent, 50 to 200. */
+  speed: number;
+  /** True keeps the pitch when the speed changes. False lets pitch follow speed (nightcore: faster and higher). */
+  keepPitch: boolean;
+  /** Moving-sound effects for headphones: off, "8d" (slow circle) or "4d" (faster, wider). */
+  spatial: "off" | "8d" | "4d";
+}
+export const FLAT_EFFECTS: AudioEffects = { enabled: true, preamp: 0, bands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: 0, treble: 0, stereoWidth: 100, crossfeed: 0, reverb: "off", compressor: "off", speed: 100, keepPitch: true, spatial: "off" };
 export interface AudioSettingsDto {
   settings: AudioSettings;
   available: boolean;
   output: { driver: string | null; format: string | null; sampleRate: number | null; sourceFormat: string | null; sourceSampleRate: number | null };
+}
+/** A sound preset: a full set of effects. Choosing one replaces what was set before. */
+export interface EffectPreset { id: string; label: string; group: string; effects: AudioEffects }
+export function playerEffectPresets(): Promise<EffectPreset[]> {
+  return invoke("player_effect_presets");
+}
+/** Fired when the sound settings change outside the settings panel (the macOS Sound menu). */
+export function subscribeAudioSettings(on: (dto: AudioSettingsDto) => void): Promise<UnlistenFn> {
+  return listen<AudioSettingsDto>("core://audio/settings", (event) => on(event.payload));
 }
 export function playerAudioSettings(): Promise<AudioSettingsDto> {
   return invoke("player_audio_settings");

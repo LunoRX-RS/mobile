@@ -13,6 +13,7 @@ pub mod mobile;
 mod mobile_protocol;
 #[cfg(desktop)]
 pub mod native;
+pub mod presets;
 mod proxy;
 pub mod state;
 pub mod track_info;

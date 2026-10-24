@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-player-effect-presets"
+description = "Enables the player_effect_presets command without any pre-configured scope."
+commands.allow = ["player_effect_presets"]
+
+[[permission]]
+identifier = "deny-player-effect-presets"
+description = "Denies the player_effect_presets command without any pre-configured scope."
+commands.deny = ["player_effect_presets"]
