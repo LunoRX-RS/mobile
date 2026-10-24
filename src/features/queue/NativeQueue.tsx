@@ -20,6 +20,9 @@ const NEXT_STATUS: Record<string, string> = {
   unavailable: "No related track could be prepared",
 };
 
+/** The most songs core keeps up next (QUEUE_MAX in autoplay.rs); at this size there is nothing more to load. */
+const QUEUE_CAP = 500;
+
 type Upcoming = ReturnType<typeof usePlayback.getState>["autoplay"]["queue"][number];
 
 const toHit = (item: Upcoming) => ({ provider: item.provider, source: "YouTube Music" as const, providerTrackId: item.id, canonicalUrl: `https://www.youtube.com/watch?v=${item.id}`, title: item.title, artists: item.artists, artworkUrl: item.artworkUrl, durationMs: item.durationMs });
@@ -50,8 +53,9 @@ function QueueRow({ item, index, busy, status, onDrop }: { item: Upcoming; index
 
 /** Loads more related songs when the end of the list scrolls into view, one request at a time. It never gives up:
  * after an empty answer it waits a little longer each time and asks again while the end is still on screen. */
-function useLoadMore(enabled: boolean, resetKey: string | undefined) {
-  const sentinel = useRef<HTMLLIElement | null>(null);
+function useLoadMore(enabled: boolean, resetKey: string | undefined, remaining: number) {
+  // State, not a plain ref: the effect below runs again when the sentinel is drawn later or replaced.
+  const [sentinel, setSentinel] = useState<HTMLLIElement | null>(null);
   const [loading, setLoading] = useState(false);
   const [retry, setRetry] = useState(0);
   const misses = useRef(0);
@@ -66,16 +70,19 @@ function useLoadMore(enabled: boolean, resetKey: string | undefined) {
     misses.current = added > 0 ? 0 : misses.current + 1;
     inFlight.current = false;
     setLoading(false);
-    if (added === 0) window.setTimeout(() => setRetry((n) => n + 1), Math.min(2000 * 2 ** misses.current, 20000));
+    // Always look again once a load ends: core reports the longer queue before this call returns, so the "fewer than 30
+    // left" check may already have run while this load was in flight. After an empty answer wait a little longer each time.
+    window.setTimeout(() => setRetry((n) => n + 1), added > 0 ? 0 : Math.min(800 * 2 ** (misses.current - 1), 8000));
   }, []);
   useEffect(() => {
-    const node = sentinel.current;
-    if (!enabled || !node) return;
-    const observer = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) void load(); }, { rootMargin: "240px" });
-    observer.observe(node);
+    if (!enabled || !sentinel) return;
+    const observer = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) void load(); }, { rootMargin: "900px" });
+    observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [enabled, load, retry, loading]);
-  return { sentinel, loading };
+  }, [enabled, sentinel, load, retry]); // not `loading`: the observer stays put while a load runs; `retry` re-arms it after an empty answer
+  // Keep a good stretch of songs ready ahead of the scroll, so the end of the list is rarely reached.
+  useEffect(() => { if (enabled && remaining < 30) void load(); }, [enabled, remaining, load, retry]);
+  return { sentinel: setSentinel, loading };
 }
 
 export default function NativeQueue({ bare = false }: { bare?: boolean } = {}) {
@@ -94,7 +101,10 @@ export default function NativeQueue({ bare = false }: { bare?: boolean } = {}) {
   const dragging = useRef(false);
   const signature = upcoming.map((t) => t.id).join(",");
   useEffect(() => { if (!dragging.current) setOrder(upcoming); }, [signature]);
-  const more = useLoadMore(!!track && upcoming.length > 0 && next.state !== "finding", track?.providerTrackId);
+  // The first frame only draws what is on screen; the rest follows on the next frame so opening stays smooth.
+  const [drawn, setDrawn] = useState(10);
+  useEffect(() => { const id = window.setTimeout(() => setDrawn(Number.MAX_SAFE_INTEGER), 80); return () => window.clearTimeout(id); }, []);
+  const more = useLoadMore(!!track && upcoming.length > 0 && upcoming.length < QUEUE_CAP && next.state !== "finding", track?.providerTrackId, upcoming.length);
   const drop = (id: string) => {
     dragging.current = false;
     const from = upcoming.findIndex((t) => t.id === id);
@@ -155,11 +165,11 @@ export default function NativeQueue({ bare = false }: { bare?: boolean } = {}) {
       <section aria-labelledby="queue-next" className="flex flex-col gap-1">
         <h3 id="queue-next" className="px-2 text-[13px] leading-[18px] font-semibold text-secondary-text">Up next</h3>
         {next.state === "finding" && <p role="status" className="flex items-center gap-2 px-2 py-2 text-[13px] text-secondary-text"><Loader2 size={16} className="lx-spin" aria-hidden="true" />Finding up to 50 related songs…</p>}
-        {upcoming.length > 0 ? <Reorder.Group as="ol" axis="y" values={order} onReorder={(v) => { dragging.current = true; setOrder(v); }} aria-label="Autoplay playlist" className="flex flex-col">
-          {order.map((item, index) => <QueueRow key={item.id} item={item} index={index} busy={s.busy} status={NEXT_STATUS[next.state] ?? "Up next"} onDrop={drop} />)}
-          <li ref={more.sentinel} className="flex h-14 items-center justify-center text-[12px] text-secondary-text">
+        {upcoming.length > 0 ? <Reorder.Group as="ol" axis="y" values={order.slice(0, drawn)} onReorder={(v) => { dragging.current = true; setOrder([...v, ...order.slice(drawn)]); }} aria-label="Autoplay playlist" className="flex flex-col">
+          {order.slice(0, drawn).map((item, index) => <QueueRow key={item.id} item={item} index={index} busy={s.busy} status={NEXT_STATUS[next.state] ?? "Up next"} onDrop={drop} />)}
+          {drawn >= order.length && order.length < QUEUE_CAP && next.state !== "finding" && <li ref={more.sentinel} className="flex h-14 items-center justify-center text-[12px] text-secondary-text">
             <span role="status" className="flex items-center gap-2"><Loader2 size={14} className="lx-spin" aria-hidden="true" />Loading more…</span>
-          </li>
+          </li>}
         </Reorder.Group> : next.state !== "finding" && <p role="status" className="px-2 py-2 text-[13px] text-secondary-text">{NEXT_STATUS[next.state] ?? "Nothing after this song yet."}</p>}
 
       </section>
