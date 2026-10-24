@@ -195,7 +195,7 @@ impl PlayerHost for NativeHost {
                                 Ok(p) => p,
                                 Err(e) => {
                                     stage_log!("[debug] mobile load: proxy failed: {:?}", e);
-                                    return Err(extract::failed());
+                                    return Err(e);
                                 }
                             };
                             let url = next.url.clone();

@@ -30,6 +30,8 @@ pub enum SessionError {
 impl Yt {
     pub fn new(timeout: Duration) -> Result<Self, Error> {
         Ok(Self::from_client(
+            // innerlight's default policy: a bounded retry for transient failures (429/5xx/timeout), never for a
+            // sign-in wall, a refusal or a challenge.
             Client::builder().timeout(timeout).build()?,
         ))
     }

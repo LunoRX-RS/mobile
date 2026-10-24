@@ -688,16 +688,7 @@ impl DiskCache {
 }
 
 async fn download(audio: &ResolvedAudio, path: &Path) -> Result<()> {
-    let mut url = reqwest::Url::parse(&audio.url).map_err(|_| CacheError::Download)?;
-    let query: Vec<_> = url
-        .query_pairs()
-        .filter(|(k, _)| k != "range")
-        .map(|(k, v)| (k.into_owned(), v.into_owned()))
-        .collect();
-    url.query_pairs_mut()
-        .clear()
-        .extend_pairs(query)
-        .append_pair("range", &format!("0-{}", audio.size - 1));
+    let url = reqwest::Url::parse(&audio.url).map_err(|_| CacheError::Download)?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(45))
         .connect_timeout(Duration::from_secs(8))
@@ -720,24 +711,21 @@ async fn download(audio: &ResolvedAudio, path: &Path) -> Result<()> {
         url.host_str().unwrap_or("-"),
         audio.size
     );
+    // googlevideo answers a plain GET with 403; the byte span must arrive as the standard Range header,
+    // not the old `range=` query parameter.
     let mut response = client
         .get(url)
+        .header("range", format!("bytes=0-{}", audio.size - 1))
         .send()
         .await
         .map_err(|e| {
             stage_log!("[debug] download: send failed: {}", reqwest_failure(&e));
             CacheError::Download
-        })?
-        .error_for_status()
-        .map_err(|e| {
-            stage_log!(
-                "[debug] download: http {}: {}",
-                e.status()
-                    .map_or("-".to_string(), |s| s.as_u16().to_string()),
-                reqwest_failure(&e)
-            );
-            CacheError::Download
         })?;
+    if !response.status().is_success() {
+        stage_log!("[debug] download: http {}", response.status().as_u16());
+        return Err(CacheError::Download);
+    }
     let mut options = fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]

@@ -448,6 +448,7 @@ pub enum PlayerErrorCategory {
     StaleOutcome,
     Internal,
     VerificationRequired,
+    MediaRefused,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -475,6 +476,9 @@ impl PlayerError {
             Internal => "playback failed",
             VerificationRequired => {
                 "YouTube asked for verification; sign in with Google in Connections"
+            }
+            MediaRefused => {
+                "the media host refused the audio bytes; YouTube serves a stream in full only to a signed-in session"
             }
         };
         Self { category, message }
@@ -508,6 +512,7 @@ fn from_core(e: &CoreError) -> PlayerError {
             PlaybackErrorKind::HostRejected(HostRejectKind::VerificationRequired) => {
                 C::VerificationRequired
             }
+            PlaybackErrorKind::HostRejected(HostRejectKind::MediaRefused) => C::MediaRefused,
             PlaybackErrorKind::StaleOutcome => C::StaleOutcome,
             PlaybackErrorKind::Validation(_) => C::Validation,
         },

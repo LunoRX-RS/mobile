@@ -63,6 +63,10 @@ pub enum HostRejectKind {
     /// YouTube answered with a sign-in or "confirm you're not a bot" challenge. Nothing is retried or worked around.
     #[error("verification required")]
     VerificationRequired,
+    /// The media host refused the audio bytes themselves. Without an authorised session it serves only the first
+    /// part of a stream, so a refusal is a sign-in question, not a network one.
+    #[error("media host refused the audio bytes")]
+    MediaRefused,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

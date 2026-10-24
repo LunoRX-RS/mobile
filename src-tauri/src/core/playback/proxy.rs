@@ -1,6 +1,6 @@
 //! Preload complete audio in RAM before exposing a private seekable URL to libmpv.
 use super::extract::{ResolvedAudio, failed};
-use crate::core::errors::PlaybackErrorKind;
+use crate::core::errors::{HostRejectKind, PlaybackErrorKind};
 use std::{io, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWrite, AsyncWriteExt},
@@ -51,11 +51,7 @@ impl AudioProxy {
             return Err(failed());
         }
         // Never let the decoder start with a partial track that can fail mid-song.
-        let audio = Arc::new(
-            fetch_range(&client, &audio, 0, audio.size - 1)
-                .await
-                .map_err(|_| failed())?,
-        );
+        let audio = Arc::new(fetch_range(&client, &audio, 0, audio.size - 1).await?);
         eprintln!("audio preload complete: bytes={}", audio.len());
         let task = tokio::spawn(async move {
             let mut connections = JoinSet::new();
@@ -181,37 +177,34 @@ async fn fetch_range(
     audio: &ResolvedAudio,
     start: u64,
     last: u64,
-) -> Result<Vec<u8>, StreamError> {
-    let mut url = reqwest::Url::parse(&audio.url)?;
-    let query = url
-        .query_pairs()
-        .filter(|(key, _)| key != "range")
-        .map(|(key, value)| (key.into_owned(), value.into_owned()))
-        .collect::<Vec<_>>();
-    url.query_pairs_mut()
-        .clear()
-        .extend_pairs(query)
-        .append_pair("range", &format!("{start}-{last}"));
+) -> Result<Vec<u8>, PlaybackErrorKind> {
+    let url = reqwest::Url::parse(&audio.url).map_err(|_| failed())?;
     let expected = last - start + 1;
     for attempt in 0..3 {
         let mut upstream_status = 0;
         let result = async {
-            let mut response = client.get(url.clone()).send().await?;
+            // googlevideo 403s plain GETs; the byte span goes in the standard Range header.
+            let mut response = client
+                .get(url.clone())
+                .header("range", format!("bytes={start}-{last}"))
+                .send()
+                .await
+                .map_err(|_| failed())?;
             upstream_status = response.status().as_u16();
             if !response.status().is_success() {
-                return Err("upstream rejected byte range".into());
+                return Err(failed());
             }
             let mut bytes = Vec::with_capacity(expected as usize);
-            while let Some(part) = response.chunk().await? {
+            while let Some(part) = response.chunk().await.map_err(|_| failed())? {
                 if bytes.len() as u64 + part.len() as u64 > expected {
-                    return Err("upstream ignored bounded range".into());
+                    return Err(failed());
                 }
                 bytes.extend_from_slice(&part);
             }
             if bytes.len() as u64 != expected {
-                return Err("incomplete upstream range".into());
+                return Err(failed());
             }
-            Ok::<_, StreamError>(bytes)
+            Ok::<_, PlaybackErrorKind>(bytes)
         }
         .await;
         if let Ok(bytes) = result {
@@ -222,13 +215,15 @@ async fn fetch_range(
             attempt + 1
         );
         if matches!(upstream_status, 401 | 403 | 404 | 410) {
-            return Err("upstream refused audio preload".into());
+            return Err(PlaybackErrorKind::HostRejected(
+                HostRejectKind::MediaRefused,
+            ));
         }
         if attempt < 2 {
             tokio::time::sleep(Duration::from_millis(150 * (attempt + 1))).await;
         }
     }
-    Err("upstream range failed after retries".into())
+    Err(failed())
 }
 
 #[cfg(test)]
@@ -240,7 +235,7 @@ mod tests {
         let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
             .await
             .unwrap();
-        let origin = format!("http://{}/audio?range=0-", listener.local_addr().unwrap());
+        let origin = format!("http://{}/audio", listener.local_addr().unwrap());
         let source: Vec<u8> = (0..2_000_000).map(|n| (n % 251) as u8).collect();
         let expected = source.clone();
         let upstream = tokio::spawn(async move {
@@ -250,15 +245,14 @@ mod tests {
                 header.push(socket.read_u8().await.unwrap());
             }
             let text = String::from_utf8(header).unwrap();
-            assert!(!text.to_ascii_lowercase().contains("\r\nrange:"));
+            // The byte span travels in the standard Range header; the URL itself is untouched.
+            assert!(
+                text.to_ascii_lowercase()
+                    .contains("range: bytes=0-1999999\r\n")
+            );
             let target = text.split_whitespace().nth(1).unwrap();
             let url = reqwest::Url::parse(&format!("http://localhost{target}")).unwrap();
-            let ranges: Vec<_> = url
-                .query_pairs()
-                .filter(|(key, _)| key == "range")
-                .collect();
-            assert_eq!(ranges.len(), 1);
-            assert_eq!(ranges[0].1, "0-1999999");
+            assert_eq!(url.query(), None);
             socket
                 .write_all(
                     format!(
@@ -334,7 +328,14 @@ mod tests {
 
     #[tokio::test]
     async fn rejected_and_incomplete_preloads_never_expose_a_player_url() {
-        for (status, body) in [("403 Forbidden", Vec::new()), ("200 OK", vec![1, 2])] {
+        for (status, body, expected) in [
+            (
+                "403 Forbidden",
+                Vec::new(),
+                PlaybackErrorKind::HostRejected(HostRejectKind::MediaRefused),
+            ),
+            ("200 OK", vec![1, 2], failed()),
+        ] {
             let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
                 .await
                 .unwrap();
@@ -357,11 +358,11 @@ mod tests {
                     .unwrap();
                 socket.write_all(&body).await.unwrap();
             });
-            assert!(
-                AudioProxy::start(ResolvedAudio { url, size: 100 })
-                    .await
-                    .is_err()
-            );
+            let error = AudioProxy::start(ResolvedAudio { url, size: 100 })
+                .await
+                .err()
+                .expect("a rejected or truncated preload never yields a player URL");
+            assert_eq!(error, expected, "status {status}");
             upstream.await.unwrap();
         }
     }

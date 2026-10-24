@@ -11,8 +11,9 @@ use crate::core::{
 };
 use innerlight::{
     ClientKind,
-    player::{Player, PlayerError, Quality, ResolveOptions, Resolved},
+    player::{Player, PlayerError, Quality, ResolveOptions, Resolved, request_body},
 };
+use serde_json::Value;
 use std::time::Duration;
 
 pub fn valid_id(id: &str) -> bool {
@@ -43,7 +44,7 @@ fn quality(q: AudioQuality) -> Quality {
 /// Only a sign-in or bot challenge has its own category, so the UI can say what to do. Everything else is "failed".
 fn rejection(error: PlayerError) -> PlaybackErrorKind {
     match error {
-        PlayerError::LoginRequired { .. } => {
+        PlayerError::LoginRequired { .. } | PlayerError::Transport(innerlight::Error::BotCheck) => {
             PlaybackErrorKind::HostRejected(HostRejectKind::VerificationRequired)
         }
         _ => failed(),
@@ -95,9 +96,20 @@ pub async fn resolve_with_quality(
     })
 }
 
-/// The one service request, plus at most one repeat when the cached player script no longer deciphers (that repeat
-/// fetches the script again; it is not a retry against the service's answer).
+/// The service request, plus the client's bounded retry when the failure is transient (a rate limit, a 5xx, an expired
+/// deadline). A sign-in wall, a refusal or a challenge is reported at once and never sent again. The one repeat this
+/// function adds is for a stale decipher script: it refetches the script, not the service's answer.
 async fn player(yt: &Yt, id: &str, quality_wish: AudioQuality) -> Result<Resolved, PlayerError> {
+    player_select(yt, id, quality_wish, cfg!(target_os = "ios")).await
+}
+
+/// `aac_only` drops WebM/Opus candidates before selection: iOS plays AAC in MP4 only.
+async fn player_select(
+    yt: &Yt,
+    id: &str,
+    quality_wish: AudioQuality,
+    aac_only: bool,
+) -> Result<Resolved, PlayerError> {
     let mut script_refreshed = false;
     loop {
         let script = yt.decipher().await;
@@ -114,13 +126,47 @@ async fn player(yt: &Yt, id: &str, quality_wish: AudioQuality) -> Result<Resolve
             quality: quality(quality_wish),
             signature_timestamp: script.as_ref().and_then(|s| s.signature_timestamp().ok()),
         };
-        match handle.resolve(id, options).await {
+        let body = request_body(id, options.signature_timestamp);
+        let mut answer = if options.authed {
+            yt.client()
+                .post_authed(options.kind, "player", body)
+                .await?
+        } else {
+            yt.client().post(options.kind, "player", body).await?
+        };
+        if aac_only {
+            keep_audio_mp4(&mut answer);
+        }
+        match handle.resolve_response(&answer, options.quality) {
             Err(PlayerError::DecipherFailed) if script.is_some() && !script_refreshed => {
                 stage_log!("[debug] resolve: decipher failed for {id}; fetching the script again");
                 script_refreshed = true;
                 yt.forget_script();
             }
             other => return other,
+        }
+    }
+}
+
+fn keep_audio_mp4(answer: &mut Value) {
+    let Some(streaming) = answer
+        .get_mut("streamingData")
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
+    for key in ["adaptiveFormats", "formats"] {
+        if let Some(list) = streaming.get_mut(key).and_then(Value::as_array_mut) {
+            list.retain(|format| {
+                format
+                    .get("mimeType")
+                    .and_then(Value::as_str)
+                    .is_some_and(|mime| {
+                        mime.trim_start()
+                            .to_ascii_lowercase()
+                            .starts_with("audio/mp4")
+                    })
+            });
         }
     }
 }
@@ -194,6 +240,60 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_challenge_body_is_reported_as_a_verification_need() {
+        assert_eq!(
+            rejection(PlayerError::Transport(innerlight::Error::BotCheck)),
+            PlaybackErrorKind::HostRejected(HostRejectKind::VerificationRequired)
+        );
+    }
+
+    #[tokio::test]
+    async fn ios_selection_never_picks_an_opus_stream() {
+        let mut v = formats();
+        v["streamingData"]["adaptiveFormats"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({
+                "itag": 251, "mimeType": "audio/webm; codecs=\"opus\"", "bitrate": 320_000,
+                "contentLength": "100", "url": "https://rr1.googlevideo.com/opus"
+            }));
+        let (yt, _) = yt_with(offline_script().with("player", v.clone()));
+        let best = player_select(&yt, "a_B-9zZ0-_x", AudioQuality::High, false)
+            .await
+            .unwrap();
+        assert!(best.url.ends_with("/opus"), "default: {}", best.url);
+        let (yt, _) = yt_with(offline_script().with("player", v));
+        let aac = player_select(&yt, "a_B-9zZ0-_x", AudioQuality::High, true)
+            .await
+            .unwrap();
+        assert!(aac.url.ends_with("/high"), "ios: {}", aac.url);
+        assert_eq!(aac.mime_type, "audio/mp4; codecs=\"mp4a.40.2\"");
+    }
+
+    #[test]
+    fn the_mp4_filter_only_touches_format_lists() {
+        for mut v in [
+            json!({}),
+            json!({"streamingData": "not-an-object"}),
+            json!({"streamingData": {"adaptiveFormats": "not-an-array"}}),
+            json!({"streamingData": {"adaptiveFormats": [{"mimeType": "audio/mp4; codecs=\"mp4a.40.2\""}, {"mimeType": "audio/webm"}, {"bitrate": 1}]}}),
+        ] {
+            keep_audio_mp4(&mut v);
+        }
+        let mut v = json!({"streamingData": {"adaptiveFormats": [
+            {"mimeType": "AUDIO/MP4; codecs=\"mp4a.40.2\""}, {"mimeType": " audio/mp4"}, {"mimeType": "audio/webm"}
+        ]}});
+        keep_audio_mp4(&mut v);
+        assert_eq!(
+            v["streamingData"]["adaptiveFormats"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+
     #[tokio::test]
     async fn a_url_outside_the_media_hosts_is_never_returned() {
         let mut v = formats();
@@ -261,13 +361,15 @@ mod tests {
                 .await
                 .is_err()
         );
+        // A 5xx is transient, so the client's bounded policy sends it again (three sends, its ceiling) and the answer
+        // stays a failure. Refusals and challenges verified above are sent exactly once.
         assert_eq!(
             transport
                 .requests()
                 .iter()
                 .filter(|r| r.endpoint == "player")
                 .count(),
-            1
+            3
         );
     }
 

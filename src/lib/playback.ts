@@ -67,6 +67,8 @@ function errorText(error: unknown): string {
   if (category === "storageUnavailable") return "Media storage could not be opened. Check disk access and free space, then restart this app.";
   if (category === "unsupportedCapability") return "Native playback or media storage is unavailable. Check libmpv and local storage access.";
   if (category === "timeout") return "YouTube or the audio player took too long. Try the track again.";
+  if (category === "verificationRequired") return "YouTube asked for verification. Sign in with Google in Connections.";
+  if (category === "mediaRefused") return `YouTube refused the audio bytes for this track. Sign in with Google in Connections, then try again.${DEV_MODE ? ` [debug: ${debug}]` : ""}`;
   if (category === "validation") return "This track has an invalid YouTube ID.";
   if (category === "hostRejected") {
     if (debug.includes("age") || debug.includes("Age")) return `This video is age-restricted. Sign in with Google to verify your age.${DEV_MODE ? ` [debug: ${debug}]` : ""}`;
@@ -74,7 +76,6 @@ function errorText(error: unknown): string {
     if (debug.includes("sign.in") || debug.includes("verify")) return `YouTube asked for verification. Sign in with Google in Connections.${DEV_MODE ? ` [debug: ${debug}]` : ""}`;
     return `The audio player refused this track. Try another track.${DEV_MODE ? ` [debug: ${debug}]` : ""}`;
   }
-  if (category === "verificationRequired") return "YouTube asked for verification. Sign in with Google in Connections.";
   return `Could not load this track. Try again.${DEV_MODE ? ` [debug: ${JSON.stringify(error)}]` : ""}`;
 }
 
