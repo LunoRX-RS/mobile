@@ -20,7 +20,7 @@ class PlaybackService : MediaSessionService() {
         session = MediaSession.Builder(this, Audio.controls(this))
             .setCallback(object : MediaSession.Callback {
                 override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
-                    if (controller.isTrusted || session.isMediaNotificationController(controller)) {
+                    if (controller.packageName == packageName || controller.isTrusted || session.isMediaNotificationController(controller)) {
                         MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
                     } else {
                         MediaSession.ConnectionResult.reject()

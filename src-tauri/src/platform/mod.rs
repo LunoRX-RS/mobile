@@ -3,6 +3,8 @@
 
 #[cfg(target_os = "android")]
 pub mod android_keyring;
+#[cfg(target_os = "android")]
+pub mod android_tls;
 pub mod discord;
 pub mod fonts;
 #[cfg(target_os = "ios")]

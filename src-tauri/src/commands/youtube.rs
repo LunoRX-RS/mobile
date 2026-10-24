@@ -384,15 +384,23 @@ async fn finish_sign_in(
     state: &YouTubeState,
     cookies: &[Cookie<'_>],
 ) -> Result<(), YouTubeError> {
-    let cookie = session_cookie(cookies).ok_or(YouTubeError::SignInIncomplete)?;
+    let cookie = session_cookie(cookies).ok_or_else(|| {
+        eprintln!(
+            "sign-in failed: no session cookie among {} cookies",
+            cookies.len()
+        );
+        YouTubeError::SignInIncomplete
+    })?;
     let yt = state.yt.as_ref().ok_or(YouTubeError::Unavailable)?;
     if !matches!(
         tokio::time::timeout(Duration::from_secs(20), yt.connect(&cookie)).await,
         Ok(Ok(()))
     ) {
+        eprintln!("sign-in failed: the service did not accept the session");
         return Err(YouTubeError::SessionRejected);
     }
     if state.store.set(&cookie).is_err() {
+        eprintln!("sign-in failed: the key store refused the session");
         yt.clear_session();
         state.publish(app, ConnectionStatus::StoreError);
         return Err(YouTubeError::StoreAccess);

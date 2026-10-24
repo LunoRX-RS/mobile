@@ -40,6 +40,12 @@ interface UiState {
   nowPlayingOpen: boolean;
   lyricsOpen: boolean;
   queueOpen: boolean;
+  /** The queue shown over the lyrics inside Now Playing. */
+  npQueue: boolean;
+  /** Phone Now Playing: the drawer that is open over the player (menu, queue or sleep timer). */
+  npPanel: null | "menu" | "queue" | "timer";
+  /** Phone only: Settings shows one category (true) or the list of categories (false). */
+  settingsDetail: boolean;
   selectedPlaylistId: string | null;
   libraryTab: LibraryTab;
   likedOnly: boolean;
@@ -106,6 +112,9 @@ export const useUi = create<UiState>()((set, get) => ({
   nowPlayingOpen: false,
   lyricsOpen: false,
   queueOpen: false,
+  npQueue: false,
+  npPanel: null,
+  settingsDetail: false,
   selectedPlaylistId: null,
   libraryTab: "playlists",
   likedOnly: false,
@@ -147,7 +156,7 @@ export const useUi = create<UiState>()((set, get) => ({
   setSelectedPlaylist: (id) => set({ selectedPlaylistId: id }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   setPalette: (open) => set({ paletteOpen: open }),
-  setNowPlaying: (open) => set({ nowPlayingOpen: open, lyricsOpen: open ? get().lyricsOpen : false }),
+  setNowPlaying: (open) => set({ nowPlayingOpen: open, lyricsOpen: open ? get().lyricsOpen : false, npQueue: open ? get().npQueue : false, npPanel: open ? get().npPanel : null }),
   setLyrics: (open) => set({ lyricsOpen: open }),
   toggleQueue: () => set((s) => ({ queueOpen: !s.queueOpen })),
   setQuery: (q) => set({ query: q }),

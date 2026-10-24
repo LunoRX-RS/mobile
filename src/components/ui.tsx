@@ -175,10 +175,10 @@ export function Screen({
   children: ReactNode;
 }) {
   return (
-    <section aria-labelledby={id} className="flex flex-col gap-8">
+    <section aria-labelledby={id} className="flex flex-col gap-6 md:gap-8">
       <header className="flex flex-col gap-1">
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <h1 id={id} className="font-display text-[34px] leading-[40px] font-bold tracking-[-0.022em]">
+          <h1 id={id} className="font-display text-[28px] leading-9 font-bold tracking-[-0.022em] md:text-[34px] md:leading-[40px]">
             {title}
           </h1>
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -205,11 +205,11 @@ export function Section({
 }) {
   return (
     <section aria-labelledby={id} className="flex flex-col gap-3">
-      <div className={cx("flex items-center justify-between gap-4", rule && "border-b border-hairline pb-2")}>
-        <h2 id={id} className="font-display text-[22px] leading-7 font-semibold tracking-[-0.015em]">
+      <div className={cx("flex items-center justify-between gap-3", rule && "border-b border-hairline pb-2")}>
+        <h2 id={id} className="min-w-0 truncate font-display text-[19px] leading-7 font-semibold tracking-[-0.015em] md:text-[22px]">
           {title}
         </h2>
-        {action}
+        {action && <div className="shrink-0">{action}</div>}
       </div>
       {children}
     </section>

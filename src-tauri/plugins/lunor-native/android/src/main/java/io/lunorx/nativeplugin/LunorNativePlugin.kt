@@ -35,6 +35,11 @@ class LoadArgs {
 }
 
 @InvokeArg
+class ImportArgs {
+    var state: String = "running"
+}
+
+@InvokeArg
 class SeekArgs {
     var positionMs: Double = 0.0
 }
@@ -100,6 +105,7 @@ class LunorNativePlugin(private val activity: Activity) : Plugin(activity) {
         main.post {
             Audio.player(activity).addListener(listener)
             bindPlaybackService()
+            requestNotificationPermission()
         }
         publishInsets(webView)
     }
@@ -148,6 +154,18 @@ class LunorNativePlugin(private val activity: Activity) : Plugin(activity) {
     // audio plays. Calling startForegroundService here instead would kill the app after about ten seconds whenever the
     // player is not playing yet ("did not call startForeground in time").
     private var controller: ListenableFuture<MediaController>? = null
+
+    /**
+     * Android 13+ shows the media notification, and with it the lock-screen and Live Alert media controls, only after the
+     * user allows notifications. Asked once at launch; a refusal just leaves the controls out.
+     */
+    private fun requestNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT < 33) return
+        val permission = android.Manifest.permission.POST_NOTIFICATIONS
+        if (activity.checkSelfPermission(permission) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            activity.requestPermissions(arrayOf(permission), 4101)
+        }
+    }
 
     private fun bindPlaybackService() {
         if (controller != null) return
@@ -240,6 +258,13 @@ class LunorNativePlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     @Command
+    fun importProgress(invoke: Invoke) {
+        val args = invoke.parseArgs(ImportArgs::class.java)
+        ImportNotice.show(activity, args.state)
+        invoke.resolve()
+    }
+
+    @Command
     fun poll(invoke: Invoke) {
         onMain(invoke) {
             val player = Audio.player(activity)
@@ -275,6 +300,8 @@ class LunorNativePlugin(private val activity: Activity) : Plugin(activity) {
                 val meta = MediaMetadata.Builder()
                     .setTitle(args.title)
                     .setArtist(args.artist)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+                    .setIsPlayable(true)
                     .setArtworkUri(args.artworkUrl?.takeIf { it.startsWith("https://") }?.let(Uri::parse))
                     .build()
                 player.replaceMediaItem(0, current.buildUpon().setMediaMetadata(meta).build())

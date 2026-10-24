@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChartColumn, CirclePlay, Compass, EllipsisVertical, Library, Search, Settings, Cable, User, CloudSync, X, type LucideIcon } from "lucide-react";
+import { ChartColumn, CirclePlay, Compass, EllipsisVertical, Library, Search, Settings, Cable, User, CloudSync, type LucideIcon } from "lucide-react";
 import { useUi, type View } from "../../lib/store";
 import { cx } from "../ui";
+import { Drawer } from "../Drawer";
 
 type Tab = { view: View; label: string; Icon: LucideIcon };
 
@@ -30,55 +31,34 @@ export default function MobileTabBar() {
   const view = useUi((s) => s.view);
   const navigate = useUi((s) => s.navigate);
   const [more, setMore] = useState(false);
-  const closeRef = useRef<HTMLButtonElement>(null);
   const opener = useRef<HTMLButtonElement>(null);
-  // Modal sheet: focus moves in, Escape (hardware keyboard, Android back via TalkBack) closes, focus returns to "More".
+  // Focus goes back to "More" when the drawer closes (Escape and the back gesture are handled by the drawer and the app).
   useEffect(() => {
     if (!more) return;
-    closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMore(false); };
-    window.addEventListener("keydown", onKey);
     const returnTo = opener.current;
-    return () => { window.removeEventListener("keydown", onKey); returnTo?.focus(); };
+    return () => returnTo?.focus();
   }, [more]);
   const current = TAB_OF[view] ?? view;
   const inMore = MORE.some((m) => m.view === view);
   return (
     <>
-      {more && (
-        <div className="fixed inset-0 z-[70]" role="presentation" onClick={() => setMore(false)}>
-          <div className="absolute inset-0 bg-scrim" />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="More"
-            onClick={(e) => e.stopPropagation()}
-            className="glass-solid ln-safe-bottom absolute inset-x-0 bottom-0 rounded-t-[20px] px-4 pt-3 pb-4"
-          >
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-[15px] leading-6 font-semibold">More</h2>
-              <button ref={closeRef} type="button" aria-label="Close" onClick={() => setMore(false)} className="ln-touch flex items-center justify-center rounded-full text-secondary-text">
-                <X size={20} />
+      <Drawer open={more} onClose={() => setMore(false)} title="More" fixed z="z-[70]">
+        <ul className="flex flex-col">
+          {MORE.map(({ view: v, label, Icon }) => (
+            <li key={v}>
+              <button
+                type="button"
+                aria-current={view === v ? "page" : undefined}
+                onClick={() => { setMore(false); navigate(v); }}
+                className={cx("ln-touch flex min-h-14 w-full items-center gap-4 rounded-[12px] px-3 text-left text-[16px]", view === v ? "bg-lumen-wash text-lumen-lavender" : "text-primary-text active:bg-frost-200")}
+              >
+                <Icon size={22} aria-hidden="true" />
+                {label}
               </button>
-            </div>
-            <ul className="flex flex-col">
-              {MORE.map(({ view: v, label, Icon }) => (
-                <li key={v}>
-                  <button
-                    type="button"
-                    aria-current={view === v ? "page" : undefined}
-                    onClick={() => { setMore(false); navigate(v); }}
-                    className={cx("ln-touch flex w-full items-center gap-3 rounded-[12px] px-3 text-left text-[16px]", view === v ? "bg-lumen-wash text-lumen-lavender" : "text-primary-text active:bg-frost-200")}
-                  >
-                    <Icon size={20} aria-hidden="true" />
-                    {label}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
+            </li>
+          ))}
+        </ul>
+      </Drawer>
       <nav aria-label="Main" className="glass-bar ln-safe-bottom relative z-[50] shrink-0 border-t border-hairline">
         <ul className="grid grid-cols-5">
           {TABS.map(({ view: v, label, Icon }) => {

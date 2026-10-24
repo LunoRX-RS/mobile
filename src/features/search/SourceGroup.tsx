@@ -33,8 +33,11 @@ export function ResultRow({ hit, large = false, onRemove, onMoveUp, onMoveDown, 
       role="group"
       aria-label={`${hit.title} by ${artists}, ${origin}`}
       {...menuHandlers(menu.build, menu.load)}
+      // One tap anywhere on the row plays it; the like, add and link controls inside keep their own action.
+      onClick={(e) => { if (youtube && !busy && !(e.target as HTMLElement).closest("a,button,input")) void playTrack(hit, false, playableAfter(following)); }}
       className={cx(
         "lx-reveal-host flex items-center gap-3 rounded-[8px] px-2 transition-colors duration-150 hover:bg-frost-200 focus-within:bg-frost-200",
+        youtube && "cursor-pointer",
         large ? "h-24" : "h-14",
       )}
     >
@@ -58,9 +61,10 @@ export function ResultRow({ hit, large = false, onRemove, onMoveUp, onMoveDown, 
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <p className={cx("truncate font-semibold", large ? "font-display text-[22px] leading-7 tracking-[-0.015em]" : "text-[13px] leading-[18px]")} title={hit.title}>
-          {hit.title} <span className="ml-2 inline-flex items-center gap-1.5 rounded-full bg-frost-200 px-2 py-0.5 align-middle text-[10px] font-medium text-secondary-text"><ProviderMark source={origin} />{origin}</span>
-        </p>
+        <div className="flex min-w-0 items-center gap-2">
+          <p className={cx("min-w-0 truncate font-semibold", large ? "font-display text-[22px] leading-7 tracking-[-0.015em]" : "text-[13px] leading-[18px]")} title={hit.title}>{hit.title}</p>
+          <span className="hidden h-[18px] shrink-0 items-center gap-1.5 rounded-full bg-frost-200 px-2 text-[10px] leading-none font-medium text-secondary-text xl:inline-flex"><ProviderMark source={origin} />{origin}</span>
+        </div>
         <p className="truncate text-[13px] leading-[18px] text-secondary-text" title={`${artists}, ${origin}`}>
           <ArtistLinks track={hit} />
         </p>

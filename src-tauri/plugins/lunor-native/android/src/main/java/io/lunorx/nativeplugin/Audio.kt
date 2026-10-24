@@ -89,7 +89,14 @@ object Audio {
     fun mediaItem(url: String, title: String? = null, artist: String? = null): MediaItem =
         MediaItem.Builder()
             .setUri(url)
-            .setMediaMetadata(MediaMetadata.Builder().setTitle(title).setArtist(artist).build())
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(title)
+                    .setArtist(artist)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+                    .setIsPlayable(true)
+                    .build(),
+            )
             .build()
 
     fun stopForTaskRemoval() {

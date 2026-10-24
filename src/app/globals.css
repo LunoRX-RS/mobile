@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+@font-face { font-family: "Lunor Sans"; font-weight: 400; font-display: swap; src: url("/fonts/NotoSansThai-Regular.ttf") format("truetype"); unicode-range: U+0E00-0E7F; }
+@font-face { font-family: "Lunor Sans"; font-weight: 400; font-display: swap; src: url("/fonts/NotoSans-Regular.ttf") format("truetype"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Lunor Sans"; font-weight: 500; font-display: swap; src: url("/fonts/NotoSansThai-Medium.ttf") format("truetype"); unicode-range: U+0E00-0E7F; }
+@font-face { font-family: "Lunor Sans"; font-weight: 500; font-display: swap; src: url("/fonts/NotoSans-Medium.ttf") format("truetype"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Lunor Sans"; font-weight: 600; font-display: swap; src: url("/fonts/NotoSansThai-SemiBold.ttf") format("truetype"); unicode-range: U+0E00-0E7F; }
+@font-face { font-family: "Lunor Sans"; font-weight: 600; font-display: swap; src: url("/fonts/NotoSans-SemiBold.ttf") format("truetype"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Lunor Sans"; font-weight: 700; font-display: swap; src: url("/fonts/NotoSansThai-Bold.ttf") format("truetype"); unicode-range: U+0E00-0E7F; }
+@font-face { font-family: "Lunor Sans"; font-weight: 700; font-display: swap; src: url("/fonts/NotoSans-Bold.ttf") format("truetype"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
 /* LUNOR tokens (DESIGN.md). Tailwind reads these as utilities: bg-night-canvas, text-secondary-text, w-sidebar ... */
 @theme {
   --color-night-canvas: #000000;
@@ -30,8 +39,8 @@
   --color-ambient-slate: #1c2a3a;
   --color-ambient-violet: #241f36;
 
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif;
-  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", Inter, system-ui, sans-serif;
+  --font-sans: "Lunor Sans", system-ui, sans-serif;
+  --font-display: "Lunor Sans", system-ui, sans-serif;
 
   --radius-xs: 6px;
   --radius-sm: 10px;
@@ -1248,7 +1257,10 @@ input, textarea, [contenteditable], .ln-selectable { -webkit-user-select: text; 
   [data-ln-icon] { min-width: 44px; min-height: 44px; }
   [data-ln-btn] { min-height: 44px; padding-inline: 16px; }
   /* Chips, segmented tabs and the like are plain buttons inside the page. */
-  main button, main [role="tab"], main [role="radio"] { min-height: 44px; }
+  main button:not(.ln-inline), main [role="tab"], main [role="radio"] { min-height: 44px; }
+  /* A name or link inside a line of text keeps the line's height; its tap area grows without moving anything. */
+  .ln-inline { position: relative; }
+  .ln-inline::after { content: ""; position: absolute; inset: -13px -6px; }
   [data-ln-scrubber] { min-height: 44px; }
   [data-ln-scrubber] > div[aria-hidden="true"] { height: 6px; }
   /* The knob is the last child of the track; show it at rest and make it a finger-sized dot. */

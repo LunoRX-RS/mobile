@@ -9,7 +9,7 @@ export const SCALE_MIN = 0.8;
 export const SCALE_MAX = 1.6;
 export const SCALE_STEP = 0.05;
 export interface AppStyle { font: string; scale: number }
-const SYSTEM_STACK = '-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif';
+const SYSTEM_STACK = '"Lunor Sans", system-ui, sans-serif';
 const DEFAULT: AppStyle = { font: "default", scale: 1 };
 
 const clampScale = (n: unknown): number => {

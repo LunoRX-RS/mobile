@@ -5,6 +5,14 @@ use crate::core::errors::PlaybackErrorKind;
 use crate::core::yt::Yt;
 use serde::Serialize;
 
+/// The album a song belongs to; `id` is missing when the service names the album without a page for it.
+#[derive(Clone, Serialize)]
+pub struct AlbumRef {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub name: String,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrackInfo {
@@ -13,6 +21,8 @@ pub struct TrackInfo {
     pub artists: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub artist_refs: Vec<crate::core::search::hit::ArtistRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub album: Option<AlbumRef>,
     pub artwork_url: Option<String>,
     pub lyrics: Option<String>,
     pub lyrics_source: Option<String>,
@@ -318,6 +328,10 @@ pub async fn fetch_with(
             name: a.name.clone(),
         })
         .collect();
+    let album = details.track.album.as_ref().map(|a| AlbumRef {
+        id: a.id.clone(),
+        name: a.name.clone(),
+    });
     let artists: Vec<String> = details
         .track
         .artists
@@ -405,6 +419,7 @@ pub async fn fetch_with(
         title: details.track.title,
         artists,
         artist_refs,
+        album,
         artwork_url: artwork,
         lyrics: chosen.lyrics,
         lyrics_source: chosen.source,
@@ -500,6 +515,7 @@ pub fn cached_lrclib(id: &str, path: &std::path::Path) -> Option<TrackInfo> {
         title,
         artists,
         artist_refs: vec![],
+        album: None,
         artwork_url: None,
         lyrics: chosen.lyrics,
         lyrics_source: chosen.source,
@@ -603,6 +619,7 @@ mod tests {
             provider_track_id: "abcdefghijk".into(),
             title: "T".into(),
             artist_refs: vec![],
+            album: None,
             artists: vec![],
             artwork_url: None,
             lyrics: None,

@@ -134,8 +134,10 @@ pub enum QueueEdit {
         from: usize,
         to: usize,
     },
+    /// Puts the whole up-next list in a random order.
+    Shuffle,
 }
-const QUEUE_MAX: usize = 100;
+const QUEUE_MAX: usize = 500;
 /// Returns false when the edit does not apply (unknown id, index out of range).
 pub fn edit_queue(state: &Status, edit: QueueEdit) -> bool {
     let Ok(mut s) = state.lock() else {
@@ -156,6 +158,13 @@ pub fn edit_queue(state: &Status, edit: QueueEdit) -> bool {
             }
             None => false,
         },
+        QueueEdit::Shuffle => {
+            for i in (1..s.queue.len()).rev() {
+                let j = (rand::random::<u64>() % (i as u64 + 1)) as usize;
+                s.queue.swap(i, j);
+            }
+            true
+        }
         QueueEdit::Move { from, to } => {
             if from < s.queue.len() && to < s.queue.len() {
                 let t = s.queue.remove(from);
@@ -256,7 +265,10 @@ async fn session(
             queue.remove(0);
             publish_queue(&state, &queue);
         }
-        let Some((next, _file)) = next else { return };
+        let Some((next, _file)) = next else {
+            eprintln!("autoplay stopped: no related song could be prepared");
+            return;
+        };
         status(&state, "ready", Some(next.title.clone()));
         // Best effort, after readiness is published; never awaited.
         super::track_info::prefetch_lyrics(&next.id, &next.title, &next.artists, next.duration_ms);
@@ -287,6 +299,77 @@ async fn session(
     }
 }
 const QUEUE_SIZE: usize = 50;
+
+fn offline_from_radio(t: innerlight::music::Track) -> OfflineTrack {
+    OfflineTrack {
+        provider: "YouTube".into(),
+        id: t.id,
+        title: t.title,
+        artists: t.artists.into_iter().map(|a| a.name).collect(),
+        artwork_url: t
+            .thumbnails
+            .into_iter()
+            .max_by_key(|c| c.width)
+            .and_then(|c| super::track_info::artwork_url(&c.url)),
+        duration_ms: t.duration_ms.and_then(|d| i64::try_from(d).ok()),
+    }
+}
+
+/// Appends the radio of a recently queued song to the up-next list, so the list keeps growing as the user scrolls.
+/// The newest songs are tried first, then earlier ones, so one empty answer does not end the list. Returns how many
+/// songs were added: 0 when the list is empty or full, or the service gave nothing new.
+pub async fn load_more(state: &Status, yt: &Yt) -> usize {
+    let (seeds, history, known) = {
+        let Ok(s) = state.lock() else {
+            return 0;
+        };
+        if s.queue.is_empty() || s.queue.len() >= QUEUE_MAX {
+            return 0;
+        }
+        (
+            s.queue
+                .iter()
+                .rev()
+                .take(5)
+                .map(|t| t.id.clone())
+                .collect::<Vec<_>>(),
+            s.history.clone(),
+            s.queue.iter().map(|t| t.id.clone()).collect::<Vec<_>>(),
+        )
+    };
+    let mut fresh = Vec::new();
+    for seed in seeds {
+        let Ok(Ok(mut page)) =
+            tokio::time::timeout(Duration::from_secs(14), yt.music().radio(&seed)).await
+        else {
+            continue;
+        };
+        append(
+            &mut fresh,
+            std::mem::take(&mut page.queue)
+                .into_iter()
+                .map(offline_from_radio)
+                .filter(|t| !known.contains(&t.id)),
+            &history,
+        );
+        if !fresh.is_empty() {
+            break;
+        }
+    }
+    let Ok(mut s) = state.lock() else {
+        return 0;
+    };
+    let before = s.queue.len();
+    for track in fresh {
+        if s.queue.len() >= QUEUE_MAX {
+            break;
+        }
+        if !s.queue.iter().any(|old| old.id == track.id) {
+            s.queue.push(track);
+        }
+    }
+    s.queue.len() - before
+}
 fn publish_queue(state: &Status, queue: &[OfflineTrack]) {
     if let Ok(mut status) = state.lock() {
         status.queue = queue.to_vec();
@@ -331,18 +414,7 @@ pub async fn related(
     for page_index in 0..5 {
         let items = std::mem::take(&mut page.queue)
             .into_iter()
-            .map(|t| OfflineTrack {
-                provider: "YouTube".into(),
-                id: t.id,
-                title: t.title,
-                artists: t.artists.into_iter().map(|a| a.name).collect(),
-                artwork_url: t
-                    .thumbnails
-                    .into_iter()
-                    .max_by_key(|c| c.width)
-                    .and_then(|c| super::track_info::artwork_url(&c.url)),
-                duration_ms: t.duration_ms.and_then(|d| i64::try_from(d).ok()),
-            });
+            .map(offline_from_radio);
         append(&mut queue, items, history);
         if queue.len() >= QUEUE_SIZE || page_index == 4 {
             break;
@@ -526,6 +598,29 @@ mod tests {
         assert!(edit_queue(&state, QueueEdit::Remove("ccccccccccc".into())));
         assert!(!edit_queue(&state, QueueEdit::Remove("zzzzzzzzzzz".into())));
         assert_eq!(ids(&state), ["bbbbbbbbbbb", "aaaaaaaaaaa"]);
+        // Shuffling keeps exactly the same songs, whatever the order.
+        state.lock().unwrap().queue = (0..20).map(|i| track(&format!("{i:011}"))).collect();
+        let mut before = ids(&state);
+        assert!(edit_queue(&state, QueueEdit::Shuffle));
+        let mut after = ids(&state);
+        before.sort();
+        after.sort();
+        assert_eq!(before, after);
+    }
+    #[tokio::test]
+    async fn loading_more_needs_a_queue_with_room_and_sends_nothing_otherwise() {
+        use innerlight::{Client, FixtureTransport};
+        let transport = Arc::new(FixtureTransport::new());
+        let client = Client::builder()
+            .transport(transport.clone())
+            .build()
+            .unwrap();
+        let yt = Yt::from_client(client);
+        let state: Status = Default::default();
+        assert_eq!(load_more(&state, &yt).await, 0, "empty list has no seed");
+        state.lock().unwrap().queue = (0..QUEUE_MAX).map(|i| track(&format!("{i:011}"))).collect();
+        assert_eq!(load_more(&state, &yt).await, 0, "full list stays bounded");
+        assert!(transport.requests().is_empty());
     }
     fn next() -> OfflineTrack {
         OfflineTrack {

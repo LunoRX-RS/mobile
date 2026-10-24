@@ -11,5 +11,5 @@ export function LikeButton({ track }: { track: SearchHitDto }) {
   return <span className="inline-flex shrink-0 items-center" title={error || undefined}><IconButton label={`${liked ? "Unlike" : "Like"} ${track.title}`} active={liked} aria-pressed={liked} disabled={disabled} onClick={() => void toggleSaved(track)}><Heart size={16} fill={liked ? "currentColor" : "none"} /></IconButton></span>;
 }
 export function ArtistLinks({ track }: { track: Pick<SearchHitDto, "provider" | "artists" | "artistRefs"> }) {
-  return <span>{track.artists.map((name, i) => <span key={`${name}-${i}`}>{i > 0 && ", "}<button type="button" className="rounded hover:underline focus-visible:outline-2" onClick={() => useUi.getState().openArtist(track.artistRefs?.find(a => a.name === name && a.provider === track.provider) ?? { provider: track.provider, id: null, name })}>{name}</button></span>)}</span>;
+  return <span>{track.artists.map((name, i) => <span key={`${name}-${i}`}>{i > 0 && ", "}<button type="button" className="ln-inline rounded hover:underline focus-visible:outline-2" onClick={() => useUi.getState().openArtist(track.artistRefs?.find(a => a.name === name && a.provider === track.provider) ?? { provider: track.provider, id: null, name })}>{name}</button></span>)}</span>;
 }

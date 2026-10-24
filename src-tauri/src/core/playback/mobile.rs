@@ -91,6 +91,11 @@ async fn call(
     match tokio::time::timeout(COMMAND_TIMEOUT, work).await {
         Ok(Ok(Ok(value))) => Ok(value),
         Err(_) => Err(PlaybackErrorKind::HostRejected(HostRejectKind::Timeout)),
+        Ok(Ok(Err(e))) => {
+            // The plugin's rejection text; payloads (which may hold URLs) are not logged.
+            eprintln!("native plugin command `{command}` failed: {e}");
+            Err(extract::failed())
+        }
         _ => Err(extract::failed()),
     }
 }
@@ -125,7 +130,10 @@ impl PlayerHost for NativeHost {
                                     settings.quality,
                                 )
                                 .await
-                                .map_err(|_| extract::failed())?;
+                                .map_err(|e| {
+                                    eprintln!("load failed at cache stage: {e:?}");
+                                    extract::failed()
+                                })?;
                             let url = reqwest::Url::from_file_path(&file.path)
                                 .map_err(|_| extract::failed())?
                                 .to_string();
@@ -137,8 +145,11 @@ impl PlayerHost for NativeHost {
                                 &track.provider_track_id,
                                 settings.quality,
                             )
-                            .await?;
-                            let next = AudioProxy::start(audio).await?;
+                            .await
+                            .inspect_err(|e| eprintln!("load failed at resolve stage: {e:?}"))?;
+                            let next = AudioProxy::start(audio)
+                                .await
+                                .inspect_err(|e| eprintln!("load failed at proxy stage: {e:?}"))?;
                             let url = next.url.clone();
                             *proxy = Some(next);
                             url

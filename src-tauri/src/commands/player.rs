@@ -88,6 +88,7 @@ pub async fn player_track_info(
             title: cached.title,
             artists: cached.artists,
             artist_refs: Vec::new(),
+            album: None,
             artwork_url: cached.artwork_url,
             lyrics: None,
             lyrics_source: None,
@@ -990,6 +991,7 @@ pub async fn player_queue_edit(
             QueueEdit::Remove(id)
         }
         ("move", _, _, Some(from), Some(to)) => QueueEdit::Move { from, to },
+        ("shuffle", ..) => QueueEdit::Shuffle,
         _ => return Err(invalid()),
     };
     if !edit_queue(&state.autoplay_status, edit) {
@@ -1000,6 +1002,27 @@ pub async fn player_queue_edit(
     let dto = progress(&state).await;
     let _ = app.emit_to("main", "core://player/progress", dto);
     Ok(())
+}
+
+/// Adds more related songs to the end of the up-next list. The webview asks for them as the user scrolls down.
+#[tauri::command]
+pub async fn player_queue_more(
+    app: AppHandle,
+    state: State<'_, PlayerState>,
+) -> Result<usize, PlayerError> {
+    let Some(yt) = app
+        .state::<crate::commands::youtube::YouTubeState>()
+        .yt
+        .clone()
+    else {
+        return Err(PlayerError::new(PlayerErrorCategory::UnsupportedCapability));
+    };
+    let added = crate::core::playback::autoplay::load_more(&state.autoplay_status, &yt).await;
+    if added > 0 {
+        let dto = progress(&state).await;
+        let _ = app.emit_to("main", "core://player/progress", dto);
+    }
+    Ok(added)
 }
 
 #[tauri::command]

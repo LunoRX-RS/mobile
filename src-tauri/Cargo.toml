@@ -46,6 +46,13 @@ tauri-plugin-lunor-native = { path = "plugins/lunor-native" }
 # rquickjs (RustyPipe signature solver) ships no prebuilt bindings for iOS or Android; generate them at build time (needs libclang).
 rquickjs = { version = "0.9", default-features = false, features = ["bindgen"] }
 
+# Android only: reqwest 0.13 (used by innerlight) verifies TLS through the system trust store and panics until this is initialised.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.22"
+# innerlight's JS engine panics on Android with its default nan-boxed values ("this platform is not compatible"). Features unify, so enabling the enum representation here fixes it for innerlight too.
+boa_engine = { version = "0.22", default-features = false, features = ["jsvalue-enum"] }
+rustls-platform-verifier = "0.7"
+
 # Secrets: Keychain on macOS (and iOS, directly), Credential Manager, Secret Service. Android has no keyring backend (see platform::secret).
 # iOS talks to the Keychain directly to pick a protection class (see platform/ios_keyring.rs).
 [target.'cfg(target_os = "ios")'.dependencies]
@@ -78,6 +85,11 @@ tokio = { version = "1", features = ["test-util"] }
 rustypipe = { path = "vendor/rustypipe" }
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+# Dependencies (the JS engine that deciphers YouTube links, JSON, TLS) are optimised even in debug builds; unoptimised they
+# are slow enough on a phone that the next song is not ready when the current one ends. Our own crate stays debuggable.
+[profile.dev.package."*"]
+opt-level = 2
+
 [profile.release]
 codegen-units = 1
 lto = true
