@@ -22,6 +22,7 @@ import PlaylistEditor from "../../features/playlists/PlaylistEditor";
 import PlayerScreen from "../../features/player/PlayerScreen";
 import ConnectionsScreen from "../../features/connections/ConnectionsScreen";
 import AccountsScreen from "../../features/accounts/AccountsScreen";
+import { LoginGate } from "../../features/accounts/LoginGate";
 import LoginPage from "../../features/accounts/LoginPage";
 import SettingsScreen from "../../features/settings/SettingsScreen";
 import StatsScreen from "../../features/stats/StatsScreen";
@@ -179,7 +180,7 @@ export default function AppShell() {
           <div className="flex min-w-0 flex-1 flex-col">
             {libraryError && <div role="alert" className="mx-8 mt-2 mb-3 flex shrink-0 items-center justify-between gap-4 rounded-lg bg-frost-200 px-4 py-2 text-[13px] text-secondary-text"><p>{libraryError}</p><Button className="shrink-0" onClick={() => void refreshLikes()}>Retry likes</Button></div>}
             <main ref={mainRef} id="main-content" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto outline-none">
-              <div className={view === "artist" ? "w-full pb-6 md:pb-16" : phone ? "mx-auto w-full max-w-content px-4 pt-3 pb-6" : "mx-auto w-full max-w-content px-8 pt-4 pb-16"}>
+              <div className={view === "artist" ? "w-full pb-6 md:pb-16" : phone ? "mx-auto w-full max-w-content px-4 pt-3 pb-6" : layout === "tablet" ? "mx-auto w-full max-w-content px-6 pt-4 pb-16" : "mx-auto w-full max-w-content px-8 pt-4 pb-16"}>
                 <AnimatePresence mode="wait" initial={false} onExitComplete={() => mainRef.current?.scrollTo({ top: 0 })}>
                   <ViewFrame key={view} mounted={mounted}>
                     {view === "home" && <HomeScreen onNavigate={navigate} onOpenPlaylist={(id) => { setSelectedPlaylist(id); navigate("playlists"); }} />}
@@ -230,6 +231,7 @@ export default function AppShell() {
       <NowPlaying />
       <CommandPalette />
       <ContextMenuHost />
+      <LoginGate />
     </MotionConfig>
   );
 }

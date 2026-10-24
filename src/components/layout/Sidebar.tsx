@@ -127,7 +127,7 @@ function NavRow({
       aria-label={collapsed ? label : undefined}
       {...(collapsed ? bind(label) : {})}
       className={cx(
-        "lx-press relative isolate flex h-10 w-full items-center gap-3 rounded-[8px] px-2.5 text-[14px] leading-5 font-medium transition-colors duration-150",
+        "lx-press relative isolate flex h-11 w-full items-center gap-3 rounded-[8px] px-2.5 text-[14px] leading-5 font-medium transition-colors duration-150",
         collapsed && "justify-center px-0",
         active ? "text-primary-text" : "text-secondary-text hover:bg-frost-100 hover:text-primary-text",
       )}

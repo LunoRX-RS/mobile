@@ -150,7 +150,11 @@ impl PlayerHost for NativeHost {
                                 Ok(f) => f,
                                 Err(e) => {
                                     eprintln!("[debug] mobile load: cache ensure failed: {:?}", e);
-                                    return Err(extract::failed());
+                                    return Err(if matches!(e, super::cache::CacheError::VerificationRequired) {
+                                        PlaybackErrorKind::HostRejected(HostRejectKind::VerificationRequired)
+                                    } else {
+                                        extract::failed()
+                                    });
                                 }
                             };
                             let url = reqwest::Url::from_file_path(&file.path)

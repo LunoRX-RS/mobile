@@ -62,7 +62,7 @@ export function IconButton({
       data-ln-icon=""
       {...rest}
       className={cx(
-        "inline-flex size-8 shrink-0 items-center justify-center rounded-[8px] lx-press disabled:pointer-events-none disabled:opacity-40",
+        "inline-flex size-11 shrink-0 items-center justify-center rounded-[8px] lx-press disabled:pointer-events-none disabled:opacity-40",
         active ? "text-lumen-lavender" : "text-secondary-text hover:bg-frost-100 hover:text-primary-text",
         className,
       )}
@@ -88,7 +88,7 @@ export function Scrubber({
   max: number;
   /** Fires on every move. Use for cheap, live values such as volume. */
   onChange?: (v: number) => void;
-  /** Fires once on release (or after a key press). While dragging, the knob follows the pointer. */
+  /** Fires once on release (or after a key press). Write to persistent storage. */
   onCommit?: (v: number) => void;
   label: string;
   valueText?: string;
@@ -349,5 +349,27 @@ export function Segmented<T extends string>({
         );
       })}
     </div>
+  );
+}
+
+export function Switch({
+  on,
+  onChange,
+  name,
+}: {
+  on: boolean;
+  onChange: (next: boolean) => void;
+  name: string;
+}) {
+  return (
+    <label className="relative inline-flex cursor-pointer items-center gap-2 select-none">
+      <div className="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-200"
+           onClick={() => onChange(!on)}
+           style={{ backgroundColor: on ? "var(--lumen-lavender)" : "var(--frost-300)" }}>
+        <div className={cx("pointer-events-none absolute top-0.5 left-0.5 size-4 rounded-full bg-white shadow-sm transition-transform duration-200",
+            on ? "translate-x-4" : "translate-x-0")} />
+      </div>
+      <span className="text-[13px] font-medium text-primary-text">{name}</span>
+    </label>
   );
 }
