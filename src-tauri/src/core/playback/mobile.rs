@@ -89,9 +89,22 @@ async fn call(
         app.lunor_native().call::<Value>(command, payload)
     });
     match tokio::time::timeout(COMMAND_TIMEOUT, work).await {
-        Ok(Ok(Ok(value))) => Ok(value),
-        Err(_) => Err(PlaybackErrorKind::HostRejected(HostRejectKind::Timeout)),
-        _ => Err(extract::failed()),
+        Ok(Ok(Ok(value))) => {
+            eprintln!("[debug] plugin {} ok", command);
+            Ok(value)
+        }
+        Ok(Ok(Err(e))) => {
+            eprintln!("[debug] plugin {} rejected: {}", command, e);
+            Err(extract::failed())
+        }
+        Ok(Err(e)) => {
+            eprintln!("[debug] plugin {} panicked: {}", command, e);
+            Err(extract::failed())
+        }
+        Err(_) => {
+            eprintln!("[debug] plugin {} timed out", command);
+            Err(PlaybackErrorKind::HostRejected(HostRejectKind::Timeout))
+        }
     }
 }
 
@@ -109,11 +122,19 @@ impl PlayerHost for NativeHost {
             let result = async {
                 match &req.command {
                     PlaybackCommand::Load(track) => {
-                        self.plugin("stop", json!({})).await?;
+                        eprintln!("[debug] mobile load: stop");
+                        match self.plugin("stop", json!({})).await {
+                            Ok(_) => eprintln!("[debug] mobile load: stop ok"),
+                            Err(e) => {
+                                eprintln!("[debug] mobile load: stop failed: {:?}", e);
+                                return Err(e);
+                            }
+                        }
                         proxy.take();
                         self.file.lock().await.take();
                         let url = if let Some(cache) = &self.cache {
-                            let file = cache
+                            eprintln!("[debug] mobile load: cache");
+                            let file = match cache
                                 .ensure(
                                     &self.yt,
                                     super::cache::OfflineTrack {
@@ -125,25 +146,56 @@ impl PlayerHost for NativeHost {
                                     settings.quality,
                                 )
                                 .await
-                                .map_err(|_| extract::failed())?;
+                            {
+                                Ok(f) => f,
+                                Err(e) => {
+                                    eprintln!("[debug] mobile load: cache ensure failed: {:?}", e);
+                                    return Err(extract::failed());
+                                }
+                            };
                             let url = reqwest::Url::from_file_path(&file.path)
                                 .map_err(|_| extract::failed())?
                                 .to_string();
                             *self.file.lock().await = Some(file);
                             url
                         } else {
-                            let audio = extract::resolve_with_quality(
+                            eprintln!("[debug] mobile load: resolving {}", track.provider_track_id);
+                            let audio = match extract::resolve_with_quality(
                                 &self.yt,
                                 &track.provider_track_id,
                                 settings.quality,
                             )
-                            .await?;
-                            let next = AudioProxy::start(audio).await?;
+                            .await
+                            {
+                                Ok(a) => a,
+                                Err(e) => {
+                                    eprintln!("[debug] mobile load: resolve failed: {:?}", e);
+                                    return Err(e);
+                                }
+                            };
+                            eprintln!("[debug] mobile load: resolved {}", audio.url);
+                            let next = match AudioProxy::start(audio).await {
+                                Ok(p) => p,
+                                Err(e) => {
+                                    eprintln!("[debug] mobile load: proxy failed: {:?}", e);
+                                    return Err(extract::failed());
+                                }
+                            };
                             let url = next.url.clone();
                             *proxy = Some(next);
                             url
                         };
-                        self.plugin("load", json!({ "url": url })).await
+                        eprintln!("[debug] mobile load: plugin load {}", url);
+                        match self.plugin("load", json!({ "url": url })).await {
+                            Ok(v) => {
+                                eprintln!("[debug] mobile load: plugin load ok");
+                                Ok(v)
+                            }
+                            Err(e) => {
+                                eprintln!("[debug] mobile load: plugin load failed: {:?}", e);
+                                Err(e)
+                            }
+                        }
                     }
                     PlaybackCommand::Play | PlaybackCommand::Resume => {
                         self.plugin("play", json!({})).await
