@@ -66,7 +66,14 @@ function errorText(error: unknown): string {
   if (category === "unsupportedCapability") return "Native playback or media storage is unavailable. Check libmpv and local storage access.";
   if (category === "timeout") return "YouTube or the audio player took too long. Try the track again.";
   if (category === "validation") return "This track has an invalid YouTube ID.";
-  if (category === "hostRejected") return `The audio player refused this track. Try another track. [debug: ${JSON.stringify(e ?? {})}]`;
+  if (category === "hostRejected") {
+  const debug = e?.message ?? "";
+  // Distinguish common failure modes from the debug message
+  if (debug.includes("age") || debug.includes("Age")) return `This video is age-restricted. Sign in with Google to verify your age. [debug: ${debug}]`;
+  if (debug.includes("region") || debug.includes("Region")) return `This video is not available in your region. [debug: ${debug}]`;
+  if (debug.includes("sign.in") || debug.includes("verify")) return `YouTube asked for verification. Sign in with Google in Connections. [debug: ${debug}]`;
+  return `The audio player refused this track. Try another track. [debug: ${debug}]`;
+}
   if (category === "verificationRequired") return "YouTube asked for verification. Sign in with Google in Connections.";
   return `Could not load this track. Try again. [debug: ${JSON.stringify(error)}]`;
 }
