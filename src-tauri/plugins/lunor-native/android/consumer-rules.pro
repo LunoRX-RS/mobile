@@ -19,3 +19,6 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# rustls-platform-verifier is reached only through JNI, which shrinking cannot see.
+-keep, includedescriptorclasses class org.rustls.platformverifier.** { *; }

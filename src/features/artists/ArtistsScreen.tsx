@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useUi } from "../../lib/store";
 import { useLibrary } from "../../lib/library";
 import { libraryAlbum, libraryArtist, type AlbumProfile, type ArtistProfile } from "../../services/tauri/library";
@@ -11,7 +11,8 @@ import type { Tone } from "../../lib/media";
 import { ResultRow, providerName } from "../search/SourceGroup";
 import { AddToPlaylist } from "../search/AddToPlaylist";
 import { playTrack, usePlayback } from "../../lib/playback";
-import { Play, Shuffle } from "lucide-react";
+import { ChevronLeft, Play, Shuffle } from "lucide-react";
+import { backStep } from "../../lib/backNav";
 
 
 const TONES: Tone[] = ["slate", "violet", "amber", "rose", "moss", "ink"];
@@ -64,6 +65,35 @@ export function SavedLibraryScreen({ artists = false }: { artists?: boolean }) {
     {ready && (artists ? refs.size === 0 : tracks.length === 0) && <StatusNote>Like songs from Search to build your library.<Button onClick={() => useUi.getState().navigate("search")}>Search music</Button></StatusNote>}
   </Screen>;
 }
+/** Full-bleed header: the photo fills the width and the top, then fades into the page; the name and actions sit on the fade. */
+function ArtistHero({ id, name, art, meta, actions }: { id: string; name: string; art: string | null | undefined; meta: string; actions: ReactNode }) {
+  const fade = "linear-gradient(to bottom, #000 0%, #000 45%, transparent 100%)";
+  return (
+    <header className="relative isolate w-full overflow-hidden">
+      <div className="relative h-[min(86vw,440px)] w-full md:h-[440px]">
+        {art ? (
+          <img src={art} alt="" referrerPolicy="no-referrer" className="absolute inset-0 size-full object-cover object-top"
+            style={{ maskImage: fade, WebkitMaskImage: fade }} />
+        ) : (
+          <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-b from-frost-300 to-transparent" />
+        )}
+        {/* A soft top scrim keeps the back button readable on bright photos. */}
+        <div aria-hidden="true" className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/55 to-transparent" />
+      </div>
+      <button type="button" aria-label="Back" onClick={() => backStep()}
+        style={{ top: "calc(max(env(safe-area-inset-top), var(--sai-top, 0px)) + 8px)" }}
+        className="absolute left-3 z-10 flex size-11 items-center justify-center rounded-full bg-black/40 md:hidden text-white backdrop-blur-md active:bg-black/60">
+        <ChevronLeft size={24} aria-hidden="true" />
+      </button>
+      <div className="absolute inset-x-0 bottom-0 mx-auto flex w-full max-w-content flex-col gap-3 px-4 pb-3 md:px-8">
+        <h1 id={id} className="font-display text-[34px] leading-[38px] font-bold tracking-[-0.025em] drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)] md:text-[56px] md:leading-[60px]">{name}</h1>
+        {meta && <p className="text-[13px] leading-[18px] text-secondary-text">{meta}</p>}
+        {actions}
+      </div>
+    </header>
+  );
+}
+
 export default function ArtistScreen() {
   const artist = useUi(s => s.selectedArtist);
   const saved = useLibrary(s => s.tracks);
@@ -82,17 +112,16 @@ export default function ArtistScreen() {
   }, [artist, retry]);
   if (!artist) return <Screen id="artist" title="Artist"><p>Select an artist from a song.</p></Screen>;
   const tracks = profile?.tracks ?? saved.filter(t => t.provider === artist.provider && (artist.id ? t.artistRefs?.some(a => a.id === artist.id) : t.artists.includes(artist.name)));
-  return <Screen id="artist" title={profile?.name ?? artist.name} caption={providerName(artist.provider)}>
+  const meta = [profile?.subscribers != null ? `${profile.subscribers.toLocaleString()} subscribers` : "", providerName(artist.provider)].filter(Boolean).join(" · ");
+  return <section aria-labelledby="artist" className="flex flex-col gap-6">
+    <ArtistHero id="artist" name={profile?.name ?? artist.name} art={profile?.artworkUrl} meta={meta} actions={tracks.length > 0 ? <AlbumActions tracks={tracks} /> : null} />
+    <div className="mx-auto flex w-full max-w-content flex-col gap-7 px-4 md:px-8">
     {status && <StatusNote role="status">{status}{artist.id && status !== "Loading artist…" && <Button onClick={() => setRetry(n => n + 1)}>Retry</Button>}</StatusNote>}
-    <div className="flex flex-col gap-3 empty:hidden">
-    {profile?.artworkUrl && <img src={profile.artworkUrl} alt={`${profile.name} artist artwork`} className="max-h-64 w-full rounded-xl object-cover" />}
-    {profile?.subscribers != null && <p className="text-secondary-text">{profile.subscribers.toLocaleString()} subscribers · {providerName(profile.provider)}</p>}
-    {profile?.description && <p className="whitespace-pre-line text-secondary-text">{profile.description}</p>}
-    </div>
-    {tracks.length > 0 && <AlbumActions tracks={tracks} />}
+    {profile?.description && <p className="line-clamp-4 max-w-[72ch] whitespace-pre-line text-[14px] leading-5 text-secondary-text">{profile.description}</p>}
     <Section id="artist-songs" title={profile ? "Songs" : "Liked songs"}><ul>{tracks.map((hit, i) => <ResultRow key={`${hit.provider}:${hit.providerTrackId}`} hit={hit} following={tracks.slice(i + 1)} />)}</ul>{tracks.length === 0 && <p>No songs available.</p>}</Section>
     {profile && profile.albums.length > 0 && <Section id="artist-albums" title="Albums"><ul className="grid grid-cols-2 gap-4 md:grid-cols-4">{profile.albums.map(album => <li key={album.id}><button type="button" aria-label={`Open album ${album.name}`} onClick={() => useUi.getState().openAlbum({ provider: profile.provider, ...album })} className="group block w-full text-left">{album.artworkUrl && <img src={album.artworkUrl} alt="" loading="lazy" className="mb-2 aspect-square w-full rounded-lg object-cover transition-transform duration-200 group-hover:scale-[1.02]" />}<p className="text-primary-text">{album.name}</p><p className="text-[12px] text-secondary-text">{album.year} · {providerName(profile.provider)}</p></button></li>)}</ul></Section>}
-  </Screen>;
+    </div>
+  </section>;
 }
 
 export function AlbumScreen() {

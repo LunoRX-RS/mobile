@@ -360,6 +360,22 @@ pub async fn run(app: &AppHandle) -> Result<ImportReport, LibraryError> {
     run_mode(app, Mode::Full).await
 }
 
+/// Android only: mirrors the import into a progress notification (a Live Update on Android 16). Failures are ignored.
+fn live_update(app: &AppHandle, state: &'static str) {
+    #[cfg(target_os = "android")]
+    {
+        use tauri_plugin_lunor_native::LunorNativeExt;
+        let app = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let _ = app
+                .lunor_native()
+                .call::<serde_json::Value>("importProgress", serde_json::json!({ "state": state }));
+        });
+    }
+    #[cfg(not(target_os = "android"))]
+    let _ = (app, state);
+}
+
 async fn run_mode(app: &AppHandle, mode: Mode) -> Result<ImportReport, LibraryError> {
     if RUNNING.swap(true, Ordering::AcqRel) {
         return Err(LibraryError::InUse);
@@ -376,6 +392,14 @@ async fn run_mode(app: &AppHandle, mode: Mode) -> Result<ImportReport, LibraryEr
         Err(_) => Some(ImportEvent::Failed),
     };
     if let Some(event) = event {
+        live_update(
+            app,
+            if matches!(event, ImportEvent::Done { .. }) {
+                "done"
+            } else {
+                "failed"
+            },
+        );
         let _ = app.emit_to("main", EVENT, event);
     }
     result
@@ -388,6 +412,7 @@ async fn run_inner(app: &AppHandle, mode: Mode) -> Result<ImportReport, LibraryE
         .clone()
         .ok_or(LibraryError::Unavailable)?;
     if mode == Mode::Full {
+        live_update(app, "running");
         let _ = app.emit_to("main", EVENT, ImportEvent::Running);
     }
     let known = if mode == Mode::Quick {

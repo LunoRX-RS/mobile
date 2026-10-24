@@ -4,12 +4,14 @@ import { loadCustomFonts } from "../../lib/textStyle";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "motion/react";
 import { initHistory } from "../../lib/history";
+import { initBackNav } from "../../lib/backNav";
+import { installBrowserDemo } from "../../lib/demo/browserDemo";
 import { initTelemetry, track } from "../../lib/telemetry";
 import { initRemote } from "../../lib/remote";
 import { hydrateRecentSearches } from "../../lib/store";
 import { useUi } from "../../lib/store";
 import ArtistScreen, { AlbumScreen, SavedLibraryScreen } from "../../features/artists/ArtistsScreen";
-import { Button } from "../ui";
+import { Button, cx } from "../ui";
 import { useLibrary } from "../../lib/library";
 import { refreshLikes } from "../../lib/library";
 import HomeScreen from "../../features/home/HomeScreen";
@@ -108,6 +110,9 @@ function ViewFrame({ mounted, children }: { mounted: boolean; children: ReactNod
   );
 }
 
+// Plain browser during development only: sample songs and generated tones stand in for the Tauri core.
+if (process.env.NODE_ENV === "development") installBrowserDemo();
+
 export default function AppShell() {
   const reduce = useReducedMotion();
   const layout = useLayout();
@@ -119,6 +124,7 @@ export default function AppShell() {
     hydrateRecentSearches();
     void refreshLikes();
     const stopImport = initYouTubeImport();
+    const stopBackNav = initBackNav();
     void applySavedAudio();
     const stopAudio = watchAudioSettings();
     applySavedMode();
@@ -127,7 +133,7 @@ export default function AppShell() {
     const warm = () => { void loadFeed("home"); void loadFeed("explore", "charts"); };
     const idle = (window as { requestIdleCallback?: (f: () => void) => number }).requestIdleCallback;
     if (idle) idle(warm); else window.setTimeout(warm, 300);
-    return () => { stopImport(); stopAudio(); };
+    return () => { stopImport(); stopAudio(); stopBackNav(); };
   }, []);
   const mainRef = useRef<HTMLElement>(null);
   const libraryError = useLibrary(s => s.error);
@@ -150,23 +156,30 @@ export default function AppShell() {
     return () => window.clearInterval(id);
   }, []);
 
+  // The static export and the hydration pass assume the desktop layout (no window to measure). Showing it for a
+  // moment on a phone is the flash of the PC layout, so the canvas stays empty until the real width is known.
+  if (!mounted) return <div className="h-dvh bg-night-canvas" />;
+
   return (
     <MotionConfig reducedMotion="user">
       <PlaybackEvents />
+      {(window as unknown as { __lunorDemo?: boolean }).__lunorDemo && (
+        <div role="note" className="pointer-events-none fixed top-1 right-2 z-[80] rounded-full bg-frost-300 px-2.5 py-0.5 text-[11px] text-secondary-text backdrop-blur">Demo · sample songs, generated tones</div>
+      )}
       <a
         href="#main-content"
         className="glass-solid sr-only top-2 left-2 z-[60] rounded-[8px] px-3 py-2 text-[13px] focus:not-sr-only focus:fixed focus:inline-flex focus:min-h-8 focus:items-center"
       >
         Skip to content
       </a>
-      <div className="ln-safe-top ln-safe-x flex h-dvh flex-col bg-night-canvas">
+      <div className={cx("ln-safe-x flex h-dvh flex-col bg-night-canvas", !(view === "artist" && phone) && "ln-safe-top")}>
         {!phone && <TopBar />}
         <div className="flex min-h-0 flex-1">
           {!phone && <Sidebar />}
           <div className="flex min-w-0 flex-1 flex-col">
             {libraryError && <div role="alert" className="mx-8 mt-2 mb-3 flex shrink-0 items-center justify-between gap-4 rounded-lg bg-frost-200 px-4 py-2 text-[13px] text-secondary-text"><p>{libraryError}</p><Button className="shrink-0" onClick={() => void refreshLikes()}>Retry likes</Button></div>}
             <main ref={mainRef} id="main-content" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto outline-none">
-              <div className={phone ? "mx-auto w-full max-w-content px-4 pt-3 pb-6" : "mx-auto w-full max-w-content px-8 pt-4 pb-16"}>
+              <div className={view === "artist" ? "w-full pb-6 md:pb-16" : phone ? "mx-auto w-full max-w-content px-4 pt-3 pb-6" : "mx-auto w-full max-w-content px-8 pt-4 pb-16"}>
                 <AnimatePresence mode="wait" initial={false} onExitComplete={() => mainRef.current?.scrollTo({ top: 0 })}>
                   <ViewFrame key={view} mounted={mounted}>
                     {view === "home" && <HomeScreen onNavigate={navigate} onOpenPlaylist={(id) => { setSelectedPlaylist(id); navigate("playlists"); }} />}

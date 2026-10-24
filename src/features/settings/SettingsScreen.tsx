@@ -1,11 +1,12 @@
 "use client";
 
-import { Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ActivePill } from "../../components/Motion";
 import { Screen, cx } from "../../components/ui";
 import { CATEGORIES as ALL_CATEGORIES, CategoryPane, SEARCH_INDEX as ALL_INDEX, type CategoryKey } from "./categories";
-import { DESKTOP_ONLY_CATEGORIES, DESKTOP_ONLY_GROUPS, isMobileOS } from "../../lib/layout";
+import { DESKTOP_ONLY_CATEGORIES, DESKTOP_ONLY_GROUPS, isMobileOS, useLayout } from "../../lib/layout";
+import { useUi } from "../../lib/store";
 import { FIELD, InsetLevel } from "./rows";
 
 const STORE_KEY = "lunorx.settings.category";
@@ -18,6 +19,10 @@ const isKey = (v: unknown): v is CategoryKey => CATEGORIES.some((c) => c.key ===
 // The chosen category is local state, remembered per viewer in localStorage. `initialCategory` lets other screens link later.
 export default function SettingsScreen({ initialCategory }: { initialCategory?: CategoryKey } = {}) {
   const uid = useId();
+  const phone = useLayout() === "phone";
+  const detail = useUi((u) => u.settingsDetail);
+  const setDetail = (open: boolean) => useUi.setState({ settingsDetail: open });
+  useEffect(() => () => setDetail(false), []);
   const [cat, setCat] = useState<CategoryKey>(initialCategory ?? "general");
   const [wide, setWide] = useState(true);
   const [mac, setMac] = useState(false);
@@ -58,7 +63,7 @@ export default function SettingsScreen({ initialCategory }: { initialCategory?: 
   useEffect(() => {
     const open = (event: Event) => {
       const d = (event as CustomEvent<{ cat?: unknown; group?: unknown }>).detail;
-      if (isKey(d?.cat)) { setCat(d.cat); if (typeof d.group === "string") setFocusGroup(d.group); }
+      if (isKey(d?.cat)) { setCat(d.cat); setDetail(true); if (typeof d.group === "string") setFocusGroup(d.group); }
     };
     window.addEventListener("lunorx:settings-open", open);
     return () => window.removeEventListener("lunorx:settings-open", open);
@@ -99,6 +104,67 @@ export default function SettingsScreen({ initialCategory }: { initialCategory?: 
   const active = CATEGORIES.find((c) => c.key === cat) ?? CATEGORIES[0];
   const tabId = (k: string) => `${uid}-tab-${k}`;
   const panelId = `${uid}-panel`;
+
+  if (phone) {
+    const search = (
+      <div className="relative">
+        <Search size={18} strokeWidth={1.75} aria-hidden="true" className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-secondary-text" />
+        <input type="search" aria-label="Search settings" placeholder="Search settings" autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)}
+          className={cx(FIELD, "ln-sc-search h-11 w-full pl-10 text-[15px]")} />
+      </div>
+    );
+    if (detail && !q) {
+      return (
+        <div data-pg className="flex flex-col gap-5">
+          <header className="sticky top-0 z-10 -mx-4 flex items-center gap-1 bg-night-canvas/90 px-2 py-1 backdrop-blur-xl">
+            <button type="button" aria-label="Back to settings" onClick={() => setDetail(false)} className="flex size-11 items-center justify-center rounded-full text-primary-text active:bg-frost-200"><ChevronLeft size={24} aria-hidden="true" /></button>
+            <h1 className="font-display text-[20px] leading-7 font-semibold tracking-[-0.01em]">{active.label}</h1>
+          </header>
+          <p className="text-[14px] leading-5 text-secondary-text">{active.description}</p>
+          <div id={panelId} className="flex min-w-0 flex-col gap-8 pb-8">
+            <InsetLevel value={3}><CategoryPane cat={cat} mac={mac} platform={platform} /></InsetLevel>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div data-pg className="flex flex-col gap-4">
+        <h1 id="settings-title" className="font-display text-[28px] leading-9 font-bold tracking-[-0.02em]">Settings</h1>
+        {search}
+        {q ? (
+          rows.length > 0 ? (
+            <ul aria-label="Matching settings" className="flex flex-col overflow-hidden rounded-2xl bg-frost-100">
+              {rows.map((r) => (
+                <li key={`${r.group}-${r.label}`}>
+                  <button type="button" onClick={() => { choose(r.cat); setQuery(""); setDetail(true); setFocusGroup(r.group); }}
+                    className="flex min-h-14 w-full flex-col justify-center px-4 py-2 text-left active:bg-frost-200">
+                    <span className="text-[15px] leading-5 text-primary-text">{r.label}</span>
+                    <span className="text-[13px] leading-[18px] text-secondary-text">{CATEGORIES.find((c) => c.key === r.cat)?.label}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : <p role="status" className="px-1 text-[14px] text-secondary-text">No settings match</p>
+        ) : (
+          <ul aria-label="Settings categories" className="flex flex-col overflow-hidden rounded-2xl bg-frost-100">
+            {CATEGORIES.map((c) => (
+              <li key={c.key}>
+                <button type="button" onClick={() => { choose(c.key); setDetail(true); }}
+                  className="grid min-h-[68px] w-full grid-cols-[40px_minmax(0,1fr)_20px] items-center gap-3.5 px-4 py-2.5 text-left active:bg-frost-200">
+                  <span className="flex size-10 items-center justify-center rounded-[10px] bg-frost-200"><c.Icon size={20} strokeWidth={1.75} aria-hidden="true" /></span>
+                  <span className="min-w-0">
+                    <span className="block text-[16px] leading-6 font-medium">{c.label}</span>
+                    <span className="block truncate text-[13px] leading-[18px] text-secondary-text">{c.description}</span>
+                  </span>
+                  <ChevronRight size={18} aria-hidden="true" className="text-secondary-text" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div data-pg className="flex max-w-[1000px] flex-col gap-8">

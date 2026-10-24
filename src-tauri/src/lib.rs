@@ -29,7 +29,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             #[cfg(target_os = "android")]
-            platform::android_keyring::init(app.handle());
+            {
+                platform::android_tls::init(app.handle());
+                platform::android_keyring::init(app.handle());
+            }
             let library_path = app
                 .path()
                 .app_data_dir()
@@ -186,6 +189,7 @@ pub fn run() {
             commands::player::player_skip,
             commands::player::player_set_mode,
             commands::player::player_queue_edit,
+            commands::player::player_queue_more,
             commands::player::player_seek,
             commands::player::player_set_volume,
             commands::player::player_observe,
