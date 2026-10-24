@@ -34,6 +34,7 @@ export interface LastPlayed {
 }
 
 const AUDIO_FAILED = "Audio playback failed. Try the track again or open YouTube.";
+const DEV_MODE = process.env.NODE_ENV === 'development';
 
 // A view of Core state. This store does not advance playback or own a queue.
 export const usePlayback = create<PlaybackUi>((set, get) => ({
@@ -61,21 +62,20 @@ export const usePlayback = create<PlaybackUi>((set, get) => ({
 function errorText(error: unknown): string {
   const e = error as { category?: string; message?: string } | null;
   const category = e?.category;
+  const debug = e?.message ?? "";
   if (category === "storageInUse") return "Media storage is open in another LUNOR-X instance. Close it and restart this app.";
   if (category === "storageUnavailable") return "Media storage could not be opened. Check disk access and free space, then restart this app.";
   if (category === "unsupportedCapability") return "Native playback or media storage is unavailable. Check libmpv and local storage access.";
   if (category === "timeout") return "YouTube or the audio player took too long. Try the track again.";
   if (category === "validation") return "This track has an invalid YouTube ID.";
   if (category === "hostRejected") {
-  const debug = e?.message ?? "";
-  // Distinguish common failure modes from the debug message
-  if (debug.includes("age") || debug.includes("Age")) return `This video is age-restricted. Sign in with Google to verify your age. [debug: ${debug}]`;
-  if (debug.includes("region") || debug.includes("Region")) return `This video is not available in your region. [debug: ${debug}]`;
-  if (debug.includes("sign.in") || debug.includes("verify")) return `YouTube asked for verification. Sign in with Google in Connections. [debug: ${debug}]`;
-  return `The audio player refused this track. Try another track. [debug: ${debug}]`;
-}
+    if (debug.includes("age") || debug.includes("Age")) return `This video is age-restricted. Sign in with Google to verify your age.${DEV_MODE ? ` [debug: ${debug}]` : ""}`;
+    if (debug.includes("region") || debug.includes("Region")) return `This video is not available in your region.${DEV_MODE ? ` [debug: ${debug}]` : ""}`;
+    if (debug.includes("sign.in") || debug.includes("verify")) return `YouTube asked for verification. Sign in with Google in Connections.${DEV_MODE ? ` [debug: ${debug}]` : ""}`;
+    return `The audio player refused this track. Try another track.${DEV_MODE ? ` [debug: ${debug}]` : ""}`;
+  }
   if (category === "verificationRequired") return "YouTube asked for verification. Sign in with Google in Connections.";
-  return `Could not load this track. Try again. [debug: ${JSON.stringify(error)}]`;
+  return `Could not load this track. Try again.${DEV_MODE ? ` [debug: ${JSON.stringify(error)}]` : ""}`;
 }
 
 async function run(action: () => Promise<PlayerStateDto>) {
@@ -209,7 +209,7 @@ function isLastPlayed(value: unknown): value is LastPlayed {
     typeof t?.providerTrackId === "string" && /^[A-Za-z0-9_-]{11}$/.test(t.providerTrackId) &&
     typeof t.title === "string" && typeof t.provider === "string" && typeof t.canonicalUrl === "string" &&
     typeof v?.positionMs === "number" && Number.isFinite(v.positionMs) && v.positionMs >= 0 &&
-    typeof v.durationMs === "number" && Number.isFinite(v.durationMs) && v.durationMs >= 0
+    typeof v?.durationMs === "number" && Number.isFinite(v.durationMs) && v.durationMs >= 0
   );
 }
 

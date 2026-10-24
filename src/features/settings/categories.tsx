@@ -4,9 +4,10 @@ import { Cable, Info, Keyboard, RefreshCw, SlidersHorizontal, UserRound, Volume2
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { CacheSettings } from "../offline/OfflinePlaylist";
 import pkg from "../../../package.json";
-import { Button } from "../../components/ui";
+import { Button, Switch } from "../../components/ui";
 import { usePlayback } from "../../lib/playback";
 import { useUi } from "../../lib/store";
+import { useSettingsStore } from "../../lib/settingsStore";
 import { syncStatus, type SyncStatusDto } from "../../services/tauri/sync";
 import { AudioSettingsPanel } from "./AudioSettings";
 import { ProviderKeys } from "./ProviderKeys";
@@ -128,6 +129,15 @@ function General() {
       <TextStyleSettings />
       {!isMobileOS() && <DiscordSettings />}
       <TelemetrySettings />
+      <Inset id="settings-dev" title="Developer">
+        <SettingRow label="Detailed debug errors" hint="Show raw failure reasons in the player.">
+          <Switch
+            name="devMode"
+            on={useSettingsStore((s) => s.devMode)}
+            onChange={useSettingsStore.getState().toggleDevMode}
+          />
+        </SettingRow>
+      </Inset>
       <Inset id="settings-startup" title="Startup">
         <SettingRow label="Restore last track" hint="Read-only. A restored track waits for you to press Play.">Resumes paused</SettingRow>
       </Inset>

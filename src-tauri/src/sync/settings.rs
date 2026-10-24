@@ -31,7 +31,7 @@ impl fmt::Display for SettingsError {
 impl std::error::Error for SettingsError {}
 
 pub fn default_base_url() -> String {
-    "http://127.0.0.1:8080".to_string()
+    "https://api.lunorx.xyz".to_string()
 }
 
 /// Validates and normalizes a backend base URL. std-only: no url crate.
@@ -89,8 +89,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_is_local_backend() {
-        assert_eq!(default_base_url(), "http://127.0.0.1:8080");
+    fn default_is_production_backend() {
+        assert_eq!(default_base_url(), "https://api.lunorx.xyz");
     }
 
     #[test]

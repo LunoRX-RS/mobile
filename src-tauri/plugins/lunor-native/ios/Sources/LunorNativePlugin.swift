@@ -163,7 +163,9 @@ class LunorNativePlugin: Plugin {
 
   @objc public func load(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(LoadArgs.self)
-    guard let url = URL(string: args.url), url.isFileURL || url.host == "127.0.0.1" else {
+    guard let url = URL(string: args.url),
+      url.isFileURL || url.host == "127.0.0.1" || (url.scheme == "https" && url.host.flatMap { $0.hasSuffix(".googlevideo.com") } == true)
+    else {
       invoke.reject("url not allowed")
       return
     }

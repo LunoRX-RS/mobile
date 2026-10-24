@@ -30,11 +30,12 @@ export function PageRoot({ children }: { children: ReactNode }) {
 const InsetLevelContext = createContext<2 | 3>(2);
 export const InsetLevel = InsetLevelContext.Provider;
 
-export function Inset({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+// `hideTitle` keeps the heading for screen readers only, for a page whose own title already says the same.
+export function Inset({ id, title, hideTitle = false, children }: { id: string; title: string; hideTitle?: boolean; children: ReactNode }) {
   const H = useContext(InsetLevelContext) === 3 ? "h3" : "h2";
   return (
     <section aria-labelledby={id} className="flex flex-col gap-1.5">
-      <H id={id} tabIndex={-1} className="px-4 text-[13px] leading-[18px] font-semibold text-secondary-text">
+      <H id={id} tabIndex={-1} className={hideTitle ? "sr-only" : "px-4 text-[13px] leading-[18px] font-semibold text-secondary-text"}>
         {title}
       </H>
       <div className="overflow-hidden rounded-[10px] bg-frost-100">{children}</div>

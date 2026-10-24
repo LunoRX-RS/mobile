@@ -159,7 +159,7 @@ class LunorNativePlugin(private val activity: Activity) : Plugin(activity) {
     fun load(invoke: Invoke) {
         val args = invoke.parseArgs(LoadArgs::class.java)
         val uri = Uri.parse(args.url)
-        if (!(uri.scheme == "file" || (uri.scheme == "http" && uri.host == "127.0.0.1"))) {
+        if (!(uri.scheme == "file" || (uri.scheme == "http" && uri.host == "127.0.0.1") || (uri.scheme == "https" && uri.host?.endsWith(".googlevideo.com") == true))) {
             invoke.reject("url not allowed")
             return
         }
