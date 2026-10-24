@@ -54,7 +54,8 @@ function QueueRow({ item, index, busy, status, onDrop }: { item: Upcoming; index
 /** Loads more related songs when the end of the list scrolls into view, one request at a time. It never gives up:
  * after an empty answer it waits a little longer each time and asks again while the end is still on screen. */
 function useLoadMore(enabled: boolean, resetKey: string | undefined, remaining: number) {
-  const sentinel = useRef<HTMLLIElement | null>(null);
+  // State, not a plain ref: the effect below runs again when the sentinel is drawn later or replaced.
+  const [sentinel, setSentinel] = useState<HTMLLIElement | null>(null);
   const [loading, setLoading] = useState(false);
   const [retry, setRetry] = useState(0);
   const misses = useRef(0);
@@ -69,18 +70,19 @@ function useLoadMore(enabled: boolean, resetKey: string | undefined, remaining: 
     misses.current = added > 0 ? 0 : misses.current + 1;
     inFlight.current = false;
     setLoading(false);
-    if (added === 0) window.setTimeout(() => setRetry((n) => n + 1), Math.min(800 * 2 ** misses.current, 8000));
+    // Always look again once a load ends: core reports the longer queue before this call returns, so the "fewer than 30
+    // left" check may already have run while this load was in flight. After an empty answer wait a little longer each time.
+    window.setTimeout(() => setRetry((n) => n + 1), added > 0 ? 0 : Math.min(800 * 2 ** (misses.current - 1), 8000));
   }, []);
   useEffect(() => {
-    const node = sentinel.current;
-    if (!enabled || !node) return;
+    if (!enabled || !sentinel) return;
     const observer = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) void load(); }, { rootMargin: "900px" });
-    observer.observe(node);
+    observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [enabled, load, retry, loading]);
+  }, [enabled, sentinel, load, retry]); // not `loading`: the observer stays put while a load runs; `retry` re-arms it after an empty answer
   // Keep a good stretch of songs ready ahead of the scroll, so the end of the list is rarely reached.
   useEffect(() => { if (enabled && remaining < 30) void load(); }, [enabled, remaining, load, retry]);
-  return { sentinel, loading };
+  return { sentinel: setSentinel, loading };
 }
 
 export default function NativeQueue({ bare = false }: { bare?: boolean } = {}) {
@@ -165,7 +167,7 @@ export default function NativeQueue({ bare = false }: { bare?: boolean } = {}) {
         {next.state === "finding" && <p role="status" className="flex items-center gap-2 px-2 py-2 text-[13px] text-secondary-text"><Loader2 size={16} className="lx-spin" aria-hidden="true" />Finding up to 50 related songs…</p>}
         {upcoming.length > 0 ? <Reorder.Group as="ol" axis="y" values={order.slice(0, drawn)} onReorder={(v) => { dragging.current = true; setOrder([...v, ...order.slice(drawn)]); }} aria-label="Autoplay playlist" className="flex flex-col">
           {order.slice(0, drawn).map((item, index) => <QueueRow key={item.id} item={item} index={index} busy={s.busy} status={NEXT_STATUS[next.state] ?? "Up next"} onDrop={drop} />)}
-          {drawn >= order.length && order.length < QUEUE_CAP && <li ref={more.sentinel} className="flex h-14 items-center justify-center text-[12px] text-secondary-text">
+          {drawn >= order.length && order.length < QUEUE_CAP && next.state !== "finding" && <li ref={more.sentinel} className="flex h-14 items-center justify-center text-[12px] text-secondary-text">
             <span role="status" className="flex items-center gap-2"><Loader2 size={14} className="lx-spin" aria-hidden="true" />Loading more…</span>
           </li>}
         </Reorder.Group> : next.state !== "finding" && <p role="status" className="px-2 py-2 text-[13px] text-secondary-text">{NEXT_STATUS[next.state] ?? "Nothing after this song yet."}</p>}
