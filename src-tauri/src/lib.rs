@@ -12,6 +12,7 @@ use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let builder = tauri::Builder::default();
     // A phone has no second instance and no window to raise.
     #[cfg(desktop)]
