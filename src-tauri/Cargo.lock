@@ -2255,10 +2255,11 @@ dependencies = [
 
 [[package]]
 name = "innerlight"
-version = "0.0.1"
-source = "git+https://github.com/LunoRX-RS/innerlight#3b9eef59f9e04996beb40d5bcb40938226b602b8"
+version = "1.0.2"
+source = "git+https://github.com/LunoRX-RS/innerlight#3768f2d9f7b6b091af9fc176da27c65044ec9e01"
 dependencies = [
  "boa_engine",
+ "futures-util",
  "reqwest 0.13.5",
  "serde",
  "serde_json",
