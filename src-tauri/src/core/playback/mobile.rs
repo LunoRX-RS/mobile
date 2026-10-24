@@ -174,7 +174,16 @@ impl PlayerHost for NativeHost {
                                 }
                             };
                             eprintln!("[debug] mobile load: resolved {}", audio.url);
-                            audio.url
+                            let next = match AudioProxy::start(audio).await {
+                                Ok(p) => p,
+                                Err(e) => {
+                                    eprintln!("[debug] mobile load: proxy failed: {:?}", e);
+                                    return Err(extract::failed());
+                                }
+                            };
+                            let url = next.url.clone();
+                            *proxy = Some(next);
+                            url
                         };
                         eprintln!("[debug] mobile load: plugin load {}", url);
                         match self.plugin("load", json!({ "url": url })).await {
