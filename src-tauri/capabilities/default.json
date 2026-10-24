@@ -74,6 +74,7 @@
     "allow-player-skip",
     "allow-player-set-mode",
     "allow-player-queue-edit",
+    "allow-player-queue-more",
     "core:webview:allow-set-webview-zoom",
     "allow-player-seek",
     "allow-player-set-volume",

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-player-queue-more"
+description = "Enables the player_queue_more command without any pre-configured scope."
+commands.allow = ["player_queue_more"]
+
+[[permission]]
+identifier = "deny-player-queue-more"
+description = "Denies the player_queue_more command without any pre-configured scope."
+commands.deny = ["player_queue_more"]

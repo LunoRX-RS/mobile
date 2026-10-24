@@ -20,6 +20,9 @@ const NEXT_STATUS: Record<string, string> = {
   unavailable: "No related track could be prepared",
 };
 
+/** The most songs core keeps up next (QUEUE_MAX in autoplay.rs); at this size there is nothing more to load. */
+const QUEUE_CAP = 500;
+
 type Upcoming = ReturnType<typeof usePlayback.getState>["autoplay"]["queue"][number];
 
 const toHit = (item: Upcoming) => ({ provider: item.provider, source: "YouTube Music" as const, providerTrackId: item.id, canonicalUrl: `https://www.youtube.com/watch?v=${item.id}`, title: item.title, artists: item.artists, artworkUrl: item.artworkUrl, durationMs: item.durationMs });
@@ -99,7 +102,7 @@ export default function NativeQueue({ bare = false }: { bare?: boolean } = {}) {
   // The first frame only draws what is on screen; the rest follows on the next frame so opening stays smooth.
   const [drawn, setDrawn] = useState(10);
   useEffect(() => { const id = window.setTimeout(() => setDrawn(Number.MAX_SAFE_INTEGER), 80); return () => window.clearTimeout(id); }, []);
-  const more = useLoadMore(!!track && upcoming.length > 0 && next.state !== "finding", track?.providerTrackId, upcoming.length);
+  const more = useLoadMore(!!track && upcoming.length > 0 && upcoming.length < QUEUE_CAP && next.state !== "finding", track?.providerTrackId, upcoming.length);
   const drop = (id: string) => {
     dragging.current = false;
     const from = upcoming.findIndex((t) => t.id === id);
@@ -160,11 +163,11 @@ export default function NativeQueue({ bare = false }: { bare?: boolean } = {}) {
       <section aria-labelledby="queue-next" className="flex flex-col gap-1">
         <h3 id="queue-next" className="px-2 text-[13px] leading-[18px] font-semibold text-secondary-text">Up next</h3>
         {next.state === "finding" && <p role="status" className="flex items-center gap-2 px-2 py-2 text-[13px] text-secondary-text"><Loader2 size={16} className="lx-spin" aria-hidden="true" />Finding up to 50 related songs…</p>}
-        {upcoming.length > 0 ? <Reorder.Group as="ol" axis="y" values={order.slice(0, drawn)} onReorder={(v) => { dragging.current = true; setOrder(v); }} aria-label="Autoplay playlist" className="flex flex-col">
+        {upcoming.length > 0 ? <Reorder.Group as="ol" axis="y" values={order.slice(0, drawn)} onReorder={(v) => { dragging.current = true; setOrder([...v, ...order.slice(drawn)]); }} aria-label="Autoplay playlist" className="flex flex-col">
           {order.slice(0, drawn).map((item, index) => <QueueRow key={item.id} item={item} index={index} busy={s.busy} status={NEXT_STATUS[next.state] ?? "Up next"} onDrop={drop} />)}
-          <li ref={more.sentinel} className="flex h-14 items-center justify-center text-[12px] text-secondary-text">
+          {drawn >= order.length && order.length < QUEUE_CAP && <li ref={more.sentinel} className="flex h-14 items-center justify-center text-[12px] text-secondary-text">
             <span role="status" className="flex items-center gap-2"><Loader2 size={14} className="lx-spin" aria-hidden="true" />Loading more…</span>
-          </li>
+          </li>}
         </Reorder.Group> : next.state !== "finding" && <p role="status" className="px-2 py-2 text-[13px] text-secondary-text">{NEXT_STATUS[next.state] ?? "Nothing after this song yet."}</p>}
 
       </section>

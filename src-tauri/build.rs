@@ -86,6 +86,7 @@ fn main() {
             "player_skip",
             "player_set_mode",
             "player_queue_edit",
+            "player_queue_more",
             "player_seek",
             "player_set_volume",
             "player_observe",
