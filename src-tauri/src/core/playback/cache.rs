@@ -1,6 +1,7 @@
 //! Device-local media cache. Only complete files enter the catalog; playlist pins share media.
 use super::{
     audio::AudioQuality,
+    diag::stage_log,
     extract::{self, ResolvedAudio},
 };
 use crate::core::{
@@ -468,9 +469,18 @@ impl DiskCache {
                 _ => CacheError::Download,
             })?;
         if audio.size > MAX_TRACK {
+            stage_log!(
+                "[debug] cache ensure: {} bytes over the {} limit",
+                audio.size,
+                MAX_TRACK
+            );
             return Err(CacheError::TooLarge);
         }
         if audio.size == 0 {
+            stage_log!(
+                "[debug] cache ensure: resolved size is zero for {}",
+                track.id
+            );
             return Err(CacheError::Download);
         }
         {
@@ -485,7 +495,13 @@ impl DiskCache {
             self.root
                 .join(format!("{k}-{:032x}.part", rand::random::<u128>())),
         );
-        download(&audio, &part.0).await?;
+        if let Err(e) = download(&audio, &part.0).await {
+            stage_log!(
+                "[debug] cache ensure: download failed for {}: {e:?}",
+                track.id
+            );
+            return Err(e);
+        }
         if let Some(bytes) = artwork(&track.id).await {
             let image = Partial(self.root.join(format!(
                 "{}-{:032x}.part",
@@ -699,13 +715,29 @@ async fn download(audio: &ResolvedAudio, path: &Path) -> Result<()> {
         }))
         .build()
         .map_err(|_| CacheError::Download)?;
+    stage_log!(
+        "[debug] download: host={} size={}",
+        url.host_str().unwrap_or("-"),
+        audio.size
+    );
     let mut response = client
         .get(url)
         .send()
         .await
-        .map_err(|_| CacheError::Download)?
+        .map_err(|e| {
+            stage_log!("[debug] download: send failed: {}", reqwest_failure(&e));
+            CacheError::Download
+        })?
         .error_for_status()
-        .map_err(|_| CacheError::Download)?;
+        .map_err(|e| {
+            stage_log!(
+                "[debug] download: http {}: {}",
+                e.status()
+                    .map_or("-".to_string(), |s| s.as_u16().to_string()),
+                reqwest_failure(&e)
+            );
+            CacheError::Download
+        })?;
     let mut options = fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -715,18 +747,39 @@ async fn download(audio: &ResolvedAudio, path: &Path) -> Result<()> {
     }
     let mut file = tokio::fs::File::from_std(options.open(path).map_err(storage)?);
     let mut count = 0u64;
-    while let Some(chunk) = response.chunk().await.map_err(|_| CacheError::Download)? {
+    while let Some(chunk) = response.chunk().await.map_err(|e| {
+        stage_log!(
+            "[debug] download: chunk failed at {count} bytes: {}",
+            reqwest_failure(&e)
+        );
+        CacheError::Download
+    })? {
         count += chunk.len() as u64;
         if count > audio.size {
+            stage_log!("[debug] download: overshoot {count} > {}", audio.size);
             return Err(CacheError::Download);
         }
         file.write_all(&chunk).await.map_err(storage)?;
     }
     if count != audio.size {
+        stage_log!("[debug] download: short {count} of {} bytes", audio.size);
         return Err(CacheError::Download);
     }
     file.sync_all().await.map_err(storage)?;
+    stage_log!("[debug] download: complete {count} bytes");
     Ok(())
+}
+
+/// Identifies a failed request without its signed URL: host, failure class and status only.
+fn reqwest_failure(e: &reqwest::Error) -> String {
+    format!(
+        "host={} connect={} timeout={} status={}",
+        e.url().and_then(|u| u.host_str()).unwrap_or("-"),
+        e.is_connect(),
+        e.is_timeout(),
+        e.status()
+            .map_or("-".to_string(), |s| s.as_u16().to_string())
+    )
 }
 async fn artwork(id: &str) -> Option<Vec<u8>> {
     let client = reqwest::Client::builder()

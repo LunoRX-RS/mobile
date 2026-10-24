@@ -4,6 +4,7 @@
 //! session cookie when connected). A sign-in or verification challenge is reported as a typed error and nothing is
 //! retried, rotated or worked around.
 use super::audio::AudioQuality;
+use super::diag::stage_log;
 use crate::core::{
     errors::{HostRejectKind, PlaybackErrorKind},
     yt::Yt,
@@ -61,12 +62,35 @@ pub async fn resolve_with_quality(
     if !valid_id(id) {
         return Err(PlaybackErrorKind::Validation("invalid YouTube id"));
     }
-    let stream = tokio::time::timeout(Duration::from_secs(40), player(yt, id, quality))
-        .await
-        .map_err(|_| PlaybackErrorKind::HostRejected(HostRejectKind::Timeout))?
-        .map_err(rejection)?;
+    let stream = match tokio::time::timeout(Duration::from_secs(40), player(yt, id, quality)).await
+    {
+        Err(_) => {
+            stage_log!("[debug] resolve: timed out after 40s for {id}");
+            return Err(PlaybackErrorKind::HostRejected(HostRejectKind::Timeout));
+        }
+        Ok(Err(e)) => {
+            stage_log!("[debug] resolve: player error for {id}: {e:?}");
+            return Err(rejection(e));
+        }
+        Ok(Ok(stream)) => stream,
+    };
+    let url = match checked_url(&stream.url) {
+        Ok(url) => url,
+        Err(kind) => {
+            stage_log!("[debug] resolve: stream url rejected for {id}");
+            return Err(kind);
+        }
+    };
+    stage_log!(
+        "[debug] resolve: ok {id} host={} size={}",
+        reqwest::Url::parse(&url)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_string))
+            .unwrap_or_else(|| "-".into()),
+        stream.size
+    );
     Ok(ResolvedAudio {
-        url: checked_url(&stream.url)?,
+        url,
         size: stream.size,
     })
 }
@@ -77,6 +101,9 @@ async fn player(yt: &Yt, id: &str, quality_wish: AudioQuality) -> Result<Resolve
     let mut script_refreshed = false;
     loop {
         let script = yt.decipher().await;
+        if script.is_none() {
+            stage_log!("[debug] resolve: no decipher script available for {id}");
+        }
         let mut handle = Player::new(yt.client());
         if let Some(script) = &script {
             handle = handle.with_decipher(script.clone());
@@ -89,6 +116,7 @@ async fn player(yt: &Yt, id: &str, quality_wish: AudioQuality) -> Result<Resolve
         };
         match handle.resolve(id, options).await {
             Err(PlayerError::DecipherFailed) if script.is_some() && !script_refreshed => {
+                stage_log!("[debug] resolve: decipher failed for {id}; fetching the script again");
                 script_refreshed = true;
                 yt.forget_script();
             }

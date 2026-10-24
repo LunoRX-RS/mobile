@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod command;
+pub(crate) mod diag;
 pub mod engine;
 pub mod extract;
 pub mod host;

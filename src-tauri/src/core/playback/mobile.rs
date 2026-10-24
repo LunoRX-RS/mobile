@@ -4,6 +4,7 @@
 use super::{
     audio::{AudioControl, AudioSettings},
     command::PlaybackCommand,
+    diag::stage_log,
     extract,
     host::{HostFuture, HostOutcome, HostRequest, PlayerEvent, PlayerHost},
     mobile_protocol::{Poll, end_event},
@@ -35,23 +36,6 @@ pub struct NativeReport {
 }
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(12);
-
-/// Stage logs. A physical device forwards app stdio to a console only under some setups, so when
-/// `LUNORX_PLAYBACK_LOG` is set the same lines are appended to `tmp/lunorx-playback.log` inside the app's data
-/// container, which `devicectl device copy from` can read over the developer connection.
-macro_rules! stage_log {
-    ($($arg:tt)*) => {{
-        let line = format!($($arg)*);
-        eprintln!("{line}");
-        if std::env::var_os("LUNORX_PLAYBACK_LOG").is_some() {
-            use std::io::Write as _;
-            let path = std::env::temp_dir().join("lunorx-playback.log");
-            if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-                let _ = writeln!(file, "{line}");
-            }
-        }
-    }};
-}
 
 pub struct NativeHost {
     pub audio: AudioControl,
