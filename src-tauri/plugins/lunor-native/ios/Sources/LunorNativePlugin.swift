@@ -176,7 +176,7 @@ class LunorNativePlugin: Plugin {
         try session.setCategory(.playback, mode: .default)
         try session.setActive(true)
       } catch {
-        invoke.reject("audio session")
+        invoke.reject("audio session: \(error.localizedDescription)")
         return
       }
       self.ended = false
@@ -196,7 +196,8 @@ class LunorNativePlugin: Plugin {
             self.pendingLoad = nil
           case .failed:
             self.failed = true
-            self.pendingLoad?.reject("load failed")
+            let reason = item.error?.localizedDescription ?? asset.error?.localizedDescription ?? "unknown"
+            self.pendingLoad?.reject("load failed: \(reason)")
             self.pendingLoad = nil
           default: break
           }

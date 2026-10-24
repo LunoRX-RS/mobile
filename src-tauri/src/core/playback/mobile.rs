@@ -36,6 +36,23 @@ pub struct NativeReport {
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(12);
 
+/// Stage logs. A physical device forwards app stdio to a console only under some setups, so when
+/// `LUNORX_PLAYBACK_LOG` is set the same lines are appended to `tmp/lunorx-playback.log` inside the app's data
+/// container, which `devicectl device copy from` can read over the developer connection.
+macro_rules! stage_log {
+    ($($arg:tt)*) => {{
+        let line = format!($($arg)*);
+        eprintln!("{line}");
+        if std::env::var_os("LUNORX_PLAYBACK_LOG").is_some() {
+            use std::io::Write as _;
+            let path = std::env::temp_dir().join("lunorx-playback.log");
+            if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+                let _ = writeln!(file, "{line}");
+            }
+        }
+    }};
+}
+
 pub struct NativeHost {
     pub audio: AudioControl,
     app: AppHandle<Wry>,
@@ -90,19 +107,21 @@ async fn call(
     });
     match tokio::time::timeout(COMMAND_TIMEOUT, work).await {
         Ok(Ok(Ok(value))) => {
-            eprintln!("[debug] plugin {} ok", command);
+            if command != "poll" {
+                stage_log!("[debug] plugin {} ok", command);
+            }
             Ok(value)
         }
         Ok(Ok(Err(e))) => {
-            eprintln!("[debug] plugin {} rejected: {}", command, e);
+            stage_log!("[debug] plugin {} rejected: {}", command, e);
             Err(extract::failed())
         }
         Ok(Err(e)) => {
-            eprintln!("[debug] plugin {} panicked: {}", command, e);
+            stage_log!("[debug] plugin {} panicked: {}", command, e);
             Err(extract::failed())
         }
         Err(_) => {
-            eprintln!("[debug] plugin {} timed out", command);
+            stage_log!("[debug] plugin {} timed out", command);
             Err(PlaybackErrorKind::HostRejected(HostRejectKind::Timeout))
         }
     }
@@ -122,18 +141,18 @@ impl PlayerHost for NativeHost {
             let result = async {
                 match &req.command {
                     PlaybackCommand::Load(track) => {
-                        eprintln!("[debug] mobile load: stop");
+                        stage_log!("[debug] mobile load: stop");
                         match self.plugin("stop", json!({})).await {
-                            Ok(_) => eprintln!("[debug] mobile load: stop ok"),
+                            Ok(_) => stage_log!("[debug] mobile load: stop ok"),
                             Err(e) => {
-                                eprintln!("[debug] mobile load: stop failed: {:?}", e);
+                                stage_log!("[debug] mobile load: stop failed: {:?}", e);
                                 return Err(e);
                             }
                         }
                         proxy.take();
                         self.file.lock().await.take();
                         let url = if let Some(cache) = &self.cache {
-                            eprintln!("[debug] mobile load: cache");
+                            stage_log!("[debug] mobile load: cache");
                             let file = match cache
                                 .ensure(
                                     &self.yt,
@@ -149,7 +168,7 @@ impl PlayerHost for NativeHost {
                             {
                                 Ok(f) => f,
                                 Err(e) => {
-                                    eprintln!("[debug] mobile load: cache ensure failed: {:?}", e);
+                                    stage_log!("[debug] mobile load: cache ensure failed: {:?}", e);
                                     return Err(
                                         if matches!(
                                             e,
@@ -170,7 +189,10 @@ impl PlayerHost for NativeHost {
                             *self.file.lock().await = Some(file);
                             url
                         } else {
-                            eprintln!("[debug] mobile load: resolving {}", track.provider_track_id);
+                            stage_log!(
+                                "[debug] mobile load: resolving {}",
+                                track.provider_track_id
+                            );
                             let audio = match extract::resolve_with_quality(
                                 &self.yt,
                                 &track.provider_track_id,
@@ -180,15 +202,15 @@ impl PlayerHost for NativeHost {
                             {
                                 Ok(a) => a,
                                 Err(e) => {
-                                    eprintln!("[debug] mobile load: resolve failed: {:?}", e);
+                                    stage_log!("[debug] mobile load: resolve failed: {:?}", e);
                                     return Err(e);
                                 }
                             };
-                            eprintln!("[debug] mobile load: resolved {}", audio.url);
+                            stage_log!("[debug] mobile load: resolved {}", audio.url);
                             let next = match AudioProxy::start(audio).await {
                                 Ok(p) => p,
                                 Err(e) => {
-                                    eprintln!("[debug] mobile load: proxy failed: {:?}", e);
+                                    stage_log!("[debug] mobile load: proxy failed: {:?}", e);
                                     return Err(extract::failed());
                                 }
                             };
@@ -196,14 +218,14 @@ impl PlayerHost for NativeHost {
                             *proxy = Some(next);
                             url
                         };
-                        eprintln!("[debug] mobile load: plugin load {}", url);
+                        stage_log!("[debug] mobile load: plugin load {}", url);
                         match self.plugin("load", json!({ "url": url })).await {
                             Ok(v) => {
-                                eprintln!("[debug] mobile load: plugin load ok");
+                                stage_log!("[debug] mobile load: plugin load ok");
                                 Ok(v)
                             }
                             Err(e) => {
-                                eprintln!("[debug] mobile load: plugin load failed: {:?}", e);
+                                stage_log!("[debug] mobile load: plugin load failed: {:?}", e);
                                 Err(e)
                             }
                         }
