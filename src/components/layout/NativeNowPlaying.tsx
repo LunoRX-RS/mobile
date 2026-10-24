@@ -326,7 +326,7 @@ export function NativeNowPlaying() {
                     {fullscreen.active ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
                   </IconButton>)}
                 {!phone && <IconButton label="Make lyrics file" active={maker} aria-pressed={maker} onClick={() => setMaker(true)} className="size-9"><FilePenLine size={20} /></IconButton>}
-                <IconButton label="Queue" active={queueView} aria-pressed={queueView} onClick={() => setQueueView((v) => !v)} className="size-9"><ListMusic size={20} /></IconButton>
+                <IconButton label="Queue" active={phone ? panel === "queue" : queueView} aria-pressed={phone ? panel === "queue" : queueView} onClick={() => (phone ? useUi.setState({ npPanel: "queue" }) : setQueueView((v) => !v))} className="size-9"><ListMusic size={20} /></IconButton>
                 <IconButton label="Show lyrics" active={lyricsOpen} aria-pressed={lyricsOpen} onClick={() => useUi.getState().setLyrics(!lyricsOpen)} className="size-9"><MicVocal size={20} /></IconButton>
                 <IconButton label="Collapse Now Playing" onClick={() => useUi.getState().setNowPlaying(false)} className="size-9"><ChevronDown size={20} /></IconButton>
               </div>

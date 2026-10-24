@@ -337,11 +337,18 @@ pub async fn load_more(state: &Status, yt: &Yt) -> usize {
             s.queue.iter().map(|t| t.id.clone()).collect::<Vec<_>>(),
         )
     };
+    // The newest songs are asked together; the first answer with something new wins and the rest are dropped.
+    let mut asking = tokio::task::JoinSet::new();
+    for seed in seeds.into_iter().take(3) {
+        let yt = yt.clone();
+        asking.spawn(async move {
+            let music = yt.music();
+            tokio::time::timeout(Duration::from_secs(8), music.radio(&seed)).await
+        });
+    }
     let mut fresh = Vec::new();
-    for seed in seeds {
-        let Ok(Ok(mut page)) =
-            tokio::time::timeout(Duration::from_secs(14), yt.music().radio(&seed)).await
-        else {
+    while let Some(done) = asking.join_next().await {
+        let Ok(Ok(Ok(mut page))) = done else {
             continue;
         };
         append(

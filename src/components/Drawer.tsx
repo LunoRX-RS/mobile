@@ -22,12 +22,12 @@ export function Drawer({ open, onClose, title, height = "auto", fixed = false, z
     <AnimatePresence>
       {open && (
         <div key="drawer" role="presentation" className={cx(fixed ? "fixed" : "absolute", "inset-0", z)}>
-          <motion.div aria-hidden="true" className="absolute inset-0 bg-black/55" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.22 }} onClick={onClose} />
+          <motion.div aria-hidden="true" className="absolute inset-0 bg-black/55 will-change-[opacity]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.22 }} onClick={onClose} />
           <motion.div role="dialog" aria-modal="true" aria-label={title}
             initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", stiffness: 340, damping: 36, mass: 0.9 }}
             drag="y" dragControls={drag} dragListener={false} dragConstraints={{ top: 0, bottom: 0 }} dragElastic={{ top: 0, bottom: 0.5 }}
             onDragEnd={(_, info) => { if (info.offset.y > 100 || info.velocity.y > 500) onClose(); }}
-            className={cx("glass-solid ln-safe-bottom absolute inset-x-0 bottom-0 flex flex-col rounded-t-[22px] shadow-[0_-12px_48px_rgba(0,0,0,0.5)]", height === "60" ? "h-[60dvh]" : "max-h-[88dvh]")}>
+            className={cx("glass-solid ln-safe-bottom absolute inset-x-0 bottom-0 flex transform-gpu flex-col rounded-t-[22px] shadow-[0_-12px_48px_rgba(0,0,0,0.5)] [backface-visibility:hidden] [contain:layout_paint] will-change-transform", height === "60" ? "h-[60dvh]" : "max-h-[88dvh]")}>
             <div onPointerDown={(e) => drag.start(e)} className="flex shrink-0 touch-none flex-col items-center pt-2.5">
               <span aria-hidden="true" className="h-1.5 w-10 rounded-full bg-white/25" />
               <div className="flex h-12 w-full items-center justify-between px-5">

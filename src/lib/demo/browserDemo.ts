@@ -216,7 +216,7 @@ function handle(cmd: string, a: Args): unknown {
       push();
       return null;
     }
-    case "player_queue_more": { const add = more(10); demo.queue.push(...add); push(); return new Promise((r) => window.setTimeout(() => r(add.length), 700)); }
+    case "player_queue_more": { const add = more(10); demo.queue.push(...add); push(); return new Promise((r) => window.setTimeout(() => r(add.length), 250)); }
     case "player_track_info": return trackInfo(String(a.providerTrackId));
     case "player_audio_settings": return AUDIO;
     case "player_set_audio_settings": return { ...AUDIO, settings: a.settings };
