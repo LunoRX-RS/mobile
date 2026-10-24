@@ -196,7 +196,7 @@ class LunorNativePlugin: Plugin {
             self.pendingLoad = nil
           case .failed:
             self.failed = true
-            let reason = item.error?.localizedDescription ?? asset.error?.localizedDescription ?? "unknown"
+            let reason = item.error?.localizedDescription ?? "unknown"
             self.pendingLoad?.reject("load failed: \(reason)")
             self.pendingLoad = nil
           default: break
