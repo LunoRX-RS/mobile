@@ -24,28 +24,56 @@ class NowPlayingArgs: Decodable {
 
 // MARK: Google sign-in for YouTube (full-screen web view)
 
-/// Same host allowlist as the desktop sign-in window (`login_navigation` in src/commands/youtube.rs). Keep them in step.
-private func loginNavigationAllowed(_ url: URL) -> Bool {
-  if url.absoluteString == "about:blank" { return true }
-  guard url.scheme == "https", url.port == nil, url.user == nil, url.password == nil, let host = url.host else { return false }
-  if ["www.youtube.com", "music.youtube.com", "youtube.com",
-      "accounts.google.com", "accounts.youtube.com", "consent.google.com", "consent.youtube.com", "myaccount.google.com"].contains(host) {
-    return true
-  }
-  // accounts.google.<cc>, accounts.google.co.<cc>, accounts.google.com.<cc> with a two-letter country code
-  guard host.hasPrefix("accounts.google.") else { return false }
-  let rest = host.dropFirst("accounts.google.".count).split(separator: ".").map(String.init)
+/// YouTube answers a phone user agent with the mobile site at `m.youtube.com`, and every other `*.youtube.com` host is
+/// the same service. The leading dot keeps a lookalike such as `evil-youtube.com` out.
+private func youtubeHost(_ host: String) -> Bool {
+  host == "youtube.com" || host.hasSuffix(".youtube.com")
+}
+
+/// Google runs sign-in across its own host family: `google.com` and subdomains such as accounts, consent and the One
+/// Google Bar, plus the account's country domain (`google.<cc>`, `google.co.<cc>`, `google.com.<cc>`) with a two-letter
+/// code. A lookalike such as `notgoogle.com` or `google.co.th.evil.test` does not pass.
+private func googleHost(_ host: String) -> Bool {
+  // Like Rust's split('.') and Kotlin's split("."), keep empty labels so `google..com` and a trailing dot fail.
+  let labels = host.components(separatedBy: ".")
+  guard let index = labels.firstIndex(of: "google") else { return false }
+  let rest = Array(labels[(index + 1)...])
   let code = { (c: String) in c.count == 2 && c.allSatisfy { $0 >= "a" && $0 <= "z" } }
   switch rest.count {
-  case 1: return code(rest[0])
+  case 1: return rest[0] == "com" || code(rest[0])
   case 2: return (rest[0] == "co" || rest[0] == "com") && code(rest[1])
   default: return false
   }
 }
 
+/// Same host allowlist as the desktop sign-in window (`login_navigation` in src/commands/youtube.rs). Keep them in step.
+private func loginNavigationAllowed(_ url: URL) -> Bool {
+  if url.absoluteString == "about:blank" { return true }
+  guard url.scheme == "https", url.port == nil, url.user == nil, url.password == nil, let host = url.host?.lowercased() else { return false }
+  return youtubeHost(host) || googleHost(host)
+}
+
 private func isYouTubeOrigin(_ url: URL?) -> Bool {
-  guard let url = url, url.scheme == "https", url.port == nil, url.user == nil else { return false }
-  return ["www.youtube.com", "music.youtube.com", "youtube.com"].contains(url.host ?? "")
+  guard let url = url, url.scheme == "https", url.port == nil, url.user == nil, let host = url.host?.lowercased() else { return false }
+  return youtubeHost(host)
+}
+
+/// Host-only trace of the sign-in window: which hop loaded, failed or was blocked. Never a full URL, query or cookie.
+/// NSLog is visible in Console.app and `xcrun devicectl device console`; with `LUNORX_SIGNIN_LOG` set the same lines
+/// are also appended to `tmp/lunorx-signin.log`, which `xcrun devicectl device copy from --domain-type tmp` reads.
+private func signInLog(_ message: String) {
+  NSLog("[youtube sign-in] %@", message)
+  guard ProcessInfo.processInfo.environment["LUNORX_SIGNIN_LOG"] != nil else { return }
+  let path = (NSTemporaryDirectory() as NSString).appendingPathComponent("lunorx-signin.log")
+  let line = "[\(Int(Date().timeIntervalSince1970))] \(message)\n"
+  guard let data = line.data(using: .utf8) else { return }
+  if let handle = FileHandle(forWritingAtPath: path) {
+    handle.seekToEndOfFile()
+    handle.write(data)
+    handle.closeFile()
+  } else {
+    FileManager.default.createFile(atPath: path, contents: data)
+  }
 }
 
 class SignInController: UIViewController, WKNavigationDelegate, WKUIDelegate {
@@ -94,21 +122,46 @@ class SignInController: UIViewController, WKNavigationDelegate, WKUIDelegate {
   private func finish(_ cookies: [[String: String]]?) {
     if finished { return }
     finished = true
+    signInLog(cookies == nil ? "closed: cancelled" : "closed: session captured")
     web.stopLoading()
     dismiss(animated: true) { self.onDone?(cookies) }
   }
 
   func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-    if let url = action.request.url, loginNavigationAllowed(url) { decisionHandler(.allow) } else { decisionHandler(.cancel) }
+    guard let url = action.request.url else {
+      signInLog("navigation blocked: no url")
+      decisionHandler(.cancel)
+      return
+    }
+    let allowed = loginNavigationAllowed(url)
+    if !allowed {
+      let frame = action.targetFrame?.isMainFrame == false ? "frame" : "page"
+      signInLog("navigation blocked (\(frame)): \(url.scheme ?? "-")://\(url.host ?? "-")")
+    }
+    decisionHandler(allowed ? .allow : .cancel)
   }
 
   // Popups are denied.
-  func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? { nil }
+  func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+    signInLog("popup blocked: \(action.request.url?.host ?? "-")")
+    return nil
+  }
 
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    signInLog("loaded: \(webView.url?.host ?? "-")")
     guard isYouTubeOrigin(webView.url), !polling else { return }
     polling = true
     poll(attempt: 0)
+  }
+
+  func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+    let failure = error as NSError
+    signInLog("load failed: \(webView.url?.host ?? "-") \(failure.domain) \(failure.code)")
+  }
+
+  func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+    let failure = error as NSError
+    signInLog("load failed: \(webView.url?.host ?? "-") \(failure.domain) \(failure.code)")
   }
 
   /// The session cookies land a moment after the first YouTube Music load, and that page fires no further load events.
@@ -123,6 +176,7 @@ class SignInController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.poll(attempt: attempt + 1) }
       } else {
         self.polling = false
+        signInLog("no session cookies after \(attempt + 1) polls")
       }
     }
   }
@@ -243,6 +297,7 @@ class LunorNativePlugin: Plugin {
       self.ended = false
       self.failed = false
       MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+      MainActor.assumeIsolated { LunorLiveActivityManager.shared.stop() }
       invoke.resolve()
     }
   }
@@ -291,9 +346,12 @@ class LunorNativePlugin: Plugin {
       let position = self.player.currentTime().seconds
       let duration = self.item?.duration.seconds ?? 0
       self.lock.lock()
-      let events = self.remote
+      let queued = self.remote
       self.remote = []
       self.lock.unlock()
+      // Buttons on the Live Activity land in UserDefaults (the extension cannot reach this process directly); deliver
+      // them through the same `remote` path as lock-screen presses.
+      let events = LunorRemoteQueue.drain() + queued
       invoke.resolve([
         "status": status,
         "positionMs": position.isFinite ? max(0, position * 1000) : 0,
@@ -317,6 +375,16 @@ class LunorNativePlugin: Plugin {
       if let art = self.artwork, self.artworkUrl == args.artworkUrl { info[MPMediaItemPropertyArtwork] = art }
       MPNowPlayingInfoCenter.default().nowPlayingInfo = info
       MPNowPlayingInfoCenter.default().playbackState = args.playing ? .playing : .paused
+      MainActor.assumeIsolated {
+        LunorLiveActivityManager.shared.apply(
+          title: args.title,
+          artist: args.artist,
+          artworkUrl: args.artworkUrl,
+          durationMs: args.durationMs,
+          positionMs: args.positionMs,
+          playing: args.playing
+        )
+      }
       if let raw = args.artworkUrl, raw != self.artworkUrl, let url = URL(string: raw), url.scheme == "https" {
         self.artworkUrl = raw
         self.artwork = nil
@@ -329,6 +397,7 @@ class LunorNativePlugin: Plugin {
             var next = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
             next[MPMediaItemPropertyArtwork] = art
             MPNowPlayingInfoCenter.default().nowPlayingInfo = next
+            MainActor.assumeIsolated { LunorLiveActivityManager.shared.setArtwork(image, for: raw) }
           }
         }.resume()
       }

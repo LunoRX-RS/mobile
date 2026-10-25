@@ -39,7 +39,7 @@
     "license": "MIT",
     "licenseFile": "../LICENSE",
     "iOS": {
-      "minimumSystemVersion": "15.0"
+      "minimumSystemVersion": "17.0"
     },
     "android": {
       "minSdkVersion": 24

@@ -7,6 +7,9 @@
 	<array>
 		<string>audio</string>
 	</array>
+	<!-- Dynamic Island / lock-screen card; the widget extension lives in src-tauri/ios/LiveActivity. -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<!-- Audio is handed to AVPlayer as a file URL, or as http://127.0.0.1 when the disk cache is off. -->
 	<key>NSAppTransportSecurity</key>
 	<dict>

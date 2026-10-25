@@ -7,7 +7,8 @@ let package = Package(
     name: "tauri-plugin-lunor-native",
     platforms: [
         .macOS(.v10_13),
-        .iOS(.v15),
+        // A string keeps the 5.5 manifest valid: `.v17` needs PackageDescription 5.9.
+        .iOS("17.0"),
     ],
     products: [
         // Products define the executables and libraries a package produces, and make them visible to other packages.
