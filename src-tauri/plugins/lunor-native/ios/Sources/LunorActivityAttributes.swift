@@ -17,6 +17,8 @@ struct LunorActivityAttributes: ActivityAttributes {
     var isPlaying: Bool
     /// Anchor for the progress bar: `positionMs` was true at this instant.
     var updatedAt: Date
+    /// The lyric line core shows right now, from the synced-lyrics cache; nil when the track has none.
+    var lyric: String?
 
     var startedAt: Date { updatedAt.addingTimeInterval(-positionMs / 1000) }
     var endsAt: Date { startedAt.addingTimeInterval(max(durationMs, 1) / 1000) }

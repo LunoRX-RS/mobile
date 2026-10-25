@@ -602,6 +602,12 @@ pub fn parse_lrc_lines(value: &str) -> Option<Vec<TimedLine>> {
     Some(lines)
 }
 
+/// The line that should be on screen at `position_ms`: the last one whose start time has passed.
+/// `lines` is sorted by start time, so a partition point is enough. None before the first line.
+pub fn line_at(lines: &[TimedLine], position_ms: u64) -> Option<&TimedLine> {
+    lines[..lines.partition_point(|line| u64::from(line.start_ms) <= position_ms)].last()
+}
+
 pub(super) fn usable(record: Record) -> Option<FallbackLyrics> {
     if record.instrumental {
         return Some(FallbackLyrics {
@@ -821,6 +827,32 @@ mod tests {
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     };
+
+    #[test]
+    fn line_at_picks_the_current_line() {
+        let timed = |starts: &[u32]| -> Vec<TimedLine> {
+            starts
+                .iter()
+                .map(|&start_ms| TimedLine {
+                    start_ms,
+                    text: format!("{start_ms}"),
+                    words: None,
+                })
+                .collect()
+        };
+        let lines = timed(&[1000, 5000, 9000]);
+        assert_eq!(line_at(&lines, 0), None);
+        assert_eq!(line_at(&lines, 999), None);
+        assert_eq!(line_at(&lines, 1000).map(|l| l.text.as_str()), Some("1000"));
+        assert_eq!(line_at(&lines, 4999).map(|l| l.text.as_str()), Some("1000"));
+        assert_eq!(line_at(&lines, 5000).map(|l| l.text.as_str()), Some("5000"));
+        assert_eq!(
+            line_at(&lines, u64::from(u32::MAX)).map(|l| l.text.as_str()),
+            Some("9000")
+        );
+        assert_eq!(line_at(&timed(&[]), 1000), None);
+    }
+
     /// Local HTTP stand-in for LRCLIB. `handler` maps "path?query" to (status line, body).
     struct Mock {
         base: String,

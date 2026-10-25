@@ -19,6 +19,7 @@ class NowPlayingArgs: Decodable {
   let durationMs: Double
   let positionMs: Double
   let playing: Bool
+  let lyric: String?
 }
 
 
@@ -373,24 +374,21 @@ class LunorNativePlugin: Plugin {
         MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0,
       ]
       if let art = self.artwork, self.artworkUrl == args.artworkUrl { info[MPMediaItemPropertyArtwork] = art }
-      let owned = MainActor.assumeIsolated { () -> Bool in
+      MainActor.assumeIsolated {
         LunorLiveActivityManager.shared.apply(
           title: args.title,
           artist: args.artist,
           artworkUrl: args.artworkUrl,
           durationMs: args.durationMs,
           positionMs: args.positionMs,
-          playing: args.playing
+          playing: args.playing,
+          lyric: args.lyric
         )
-        return LunorLiveActivityManager.shared.ownsPresentation
       }
-      // While the Live Activity presents the session the system card is suppressed, so the lock screen shows one card.
-      if owned {
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-      } else {
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-        MPNowPlayingInfoCenter.default().playbackState = args.playing ? .playing : .paused
-      }
+      // Two lock-screen cards by design: the system card carries transport and AirPods buttons, the Live Activity
+      // card carries the lyric line. Remote commands stay registered for the system card.
+      MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+      MPNowPlayingInfoCenter.default().playbackState = args.playing ? .playing : .paused
       if let raw = args.artworkUrl, raw != self.artworkUrl, let url = URL(string: raw), url.scheme == "https" {
         self.artworkUrl = raw
         self.artwork = nil
@@ -400,15 +398,10 @@ class LunorNativePlugin: Plugin {
           DispatchQueue.main.async {
             guard self.artworkUrl == raw else { return }
             self.artwork = art
-            let owned = MainActor.assumeIsolated { () -> Bool in
-              LunorLiveActivityManager.shared.setArtwork(image, for: raw)
-              return LunorLiveActivityManager.shared.ownsPresentation
-            }
-            if !owned {
-              var next = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-              next[MPMediaItemPropertyArtwork] = art
-              MPNowPlayingInfoCenter.default().nowPlayingInfo = next
-            }
+            MainActor.assumeIsolated { LunorLiveActivityManager.shared.setArtwork(image, for: raw) }
+            var next = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+            next[MPMediaItemPropertyArtwork] = art
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = next
           }
         }.resume()
       }

@@ -28,17 +28,17 @@ struct LunoRXLiveActivityWidget: Widget {
     } dynamicIsland: { context in
       DynamicIsland {
         DynamicIslandExpandedRegion(.leading) {
-          Artwork(state: context.state, side: 64, radius: 12)
+          Artwork(state: context.state, side: 72, radius: 14)
             .padding(.leading, 4)
         }
         DynamicIslandExpandedRegion(.center) {
-          VStack(alignment: .leading, spacing: 2) {
+          VStack(alignment: .leading, spacing: 3) {
             Text(context.state.title)
-              .font(.system(size: 17, weight: .semibold))
+              .font(.system(size: 19, weight: .semibold))
               .foregroundStyle(LunorPalette.primary)
               .lineLimit(1)
             Text(context.state.artist)
-              .font(.system(size: 13))
+              .font(.system(size: 14))
               .foregroundStyle(LunorPalette.secondary)
               .lineLimit(1)
           }
@@ -49,7 +49,7 @@ struct LunoRXLiveActivityWidget: Widget {
             .padding(.trailing, 4)
         }
         DynamicIslandExpandedRegion(.bottom) {
-          VStack(spacing: 10) {
+          VStack(spacing: 12) {
             Progress(state: context.state)
             Controls(playing: context.state.isPlaying)
           }
@@ -69,30 +69,44 @@ struct LunoRXLiveActivityWidget: Widget {
   }
 }
 
+/// The LunoRX card is the lyrics card: header, the line core shows right now, and a slim progress bar. Transport and
+/// exact clocks live on the system Now Playing card, which shares the lock screen with this one.
 private struct LockScreenCard: View {
   let state: LunorActivityAttributes.ContentState
+
+  /// Without synced lyrics the card falls back to a clean now-playing card built around the title.
+  private var hero: String { state.lyric ?? state.title }
 
   var body: some View {
     VStack(spacing: 12) {
       HStack(spacing: 12) {
-        Artwork(state: state, side: 52, radius: 10)
-        VStack(alignment: .leading, spacing: 3) {
-          Text(state.title)
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(LunorPalette.primary)
-            .lineLimit(1)
+        Artwork(state: state, side: 44, radius: 10)
+        VStack(alignment: .leading, spacing: 2) {
+          if state.lyric != nil {
+            Text(state.title)
+              .font(.system(size: 13, weight: .semibold))
+              .foregroundStyle(LunorPalette.primary)
+              .lineLimit(1)
+          }
           Text(state.artist)
-            .font(.system(size: 12))
+            .font(.system(size: 11))
             .foregroundStyle(LunorPalette.secondary)
             .lineLimit(1)
         }
         Spacer(minLength: 0)
-        Controls(playing: state.isPlaying)
+        Indicator(playing: state.isPlaying, compact: true)
       }
+      Text(hero)
+        .font(.system(size: 18, weight: .semibold))
+        .foregroundStyle(LunorPalette.primary)
+        .lineLimit(2)
+        .minimumScaleFactor(0.8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityLabel(state.lyric == nil ? "Now playing" : "Current lyric line")
       Progress(state: state)
     }
-    .padding(.horizontal, 16)
-    .padding(.vertical, 14)
+    .padding(.horizontal, 18)
+    .padding(.vertical, 16)
   }
 }
 
@@ -180,7 +194,7 @@ private struct Progress: View {
           Spacer(minLength: 8)
           Text(timerInterval: interval, countsDown: true)
         }
-        .font(.system(size: 11, weight: .medium).monospacedDigit())
+        .font(.system(size: 12, weight: .medium).monospacedDigit())
         .foregroundStyle(LunorPalette.secondary)
       } else {
         ProgressView(value: state.progress)
@@ -192,7 +206,7 @@ private struct Progress: View {
           Spacer(minLength: 8)
           Text(Self.clock(max(state.durationMs - state.positionMs, 0)))
         }
-        .font(.system(size: 11, weight: .medium).monospacedDigit())
+        .font(.system(size: 12, weight: .medium).monospacedDigit())
         .foregroundStyle(LunorPalette.secondary)
       }
     }
@@ -216,24 +230,24 @@ private struct Controls: View {
   let playing: Bool
 
   var body: some View {
-    HStack(spacing: 26) {
+    HStack(spacing: 30) {
       Button(intent: LunorPreviousTrackIntent()) {
         Image(systemName: "backward.fill")
-          .font(.system(size: 17, weight: .semibold))
+          .font(.system(size: 18, weight: .semibold))
           .foregroundStyle(LunorPalette.primary.opacity(0.9))
       }
       .accessibilityLabel("Previous track")
 
       Button(intent: LunorTogglePlaybackIntent()) {
         Image(systemName: playing ? "pause.fill" : "play.fill")
-          .font(.system(size: 24, weight: .semibold))
+          .font(.system(size: 26, weight: .semibold))
           .foregroundStyle(LunorPalette.lavender)
       }
       .accessibilityLabel(playing ? "Pause" : "Play")
 
       Button(intent: LunorNextTrackIntent()) {
         Image(systemName: "forward.fill")
-          .font(.system(size: 17, weight: .semibold))
+          .font(.system(size: 18, weight: .semibold))
           .foregroundStyle(LunorPalette.primary.opacity(0.9))
       }
       .accessibilityLabel("Next track")
