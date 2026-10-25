@@ -691,7 +691,7 @@ impl DiskCache {
 
 async fn download(audio: &ResolvedAudio, path: &Path) -> Result<()> {
     let url = reqwest::Url::parse(&audio.url).map_err(|_| CacheError::Download)?;
-    let client = reqwest::Client::builder()
+    let client = extract::bind_to_signed_family(reqwest::Client::builder(), &url)
         .timeout(Duration::from_secs(45))
         .connect_timeout(Duration::from_secs(8))
         .redirect(reqwest::redirect::Policy::custom(|a| {
@@ -726,7 +726,11 @@ async fn download(audio: &ResolvedAudio, path: &Path) -> Result<()> {
         })?;
     if !response.status().is_success() {
         let status = response.status().as_u16();
-        stage_log!("[debug] download: http {status}");
+        stage_log!(
+            "[debug] download: http {status} (link issued for {}, connected over {})",
+            extract::family_name(extract::signed_ip(response.url())),
+            extract::family_name(response.remote_addr().map(|a| a.ip()))
+        );
         if matches!(status, 401 | 403 | 404 | 410) {
             return Err(CacheError::MediaRefused);
         }

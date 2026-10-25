@@ -170,6 +170,46 @@ fn keep_audio_mp4(answer: &mut Value) {
         }
     }
 }
+/// The IP address a stream link was issued for is in its `ip` parameter, and googlevideo refuses the link from any
+/// other address. On a phone that has both IPv4 and IPv6 the request that asked for the link and the one that
+/// downloads the audio can leave over different families, so the download is bound to the family the link names.
+/// `None` when the link names no address.
+pub(super) fn signed_ip(url: &reqwest::Url) -> Option<std::net::IpAddr> {
+    url.query_pairs()
+        .find(|(name, _)| name == "ip")?
+        .1
+        .parse()
+        .ok()
+}
+
+/// The wildcard address of the family `signed_ip` names.
+pub(super) fn signed_ip_family(url: &reqwest::Url) -> Option<std::net::IpAddr> {
+    Some(match signed_ip(url)? {
+        std::net::IpAddr::V4(_) => std::net::Ipv4Addr::UNSPECIFIED.into(),
+        std::net::IpAddr::V6(_) => std::net::Ipv6Addr::UNSPECIFIED.into(),
+    })
+}
+
+/// Makes a download client leave over the family the link was issued for. A link with no usable `ip` changes nothing.
+pub(super) fn bind_to_signed_family(
+    builder: reqwest::ClientBuilder,
+    url: &reqwest::Url,
+) -> reqwest::ClientBuilder {
+    match signed_ip_family(url) {
+        Some(local) => builder.local_address(local),
+        None => builder,
+    }
+}
+
+/// "v4", "v6" or "-" for the log; never the address itself.
+pub(super) fn family_name(address: Option<std::net::IpAddr>) -> &'static str {
+    match address {
+        Some(std::net::IpAddr::V4(_)) => "v4",
+        Some(std::net::IpAddr::V6(_)) => "v6",
+        None => "-",
+    }
+}
+
 pub(super) fn checked_url(raw: &str) -> Result<String, PlaybackErrorKind> {
     let url = reqwest::Url::parse(raw).map_err(|_| failed())?;
     if raw.len() > 16_384
@@ -188,6 +228,27 @@ pub(super) fn checked_url(raw: &str) -> Result<String, PlaybackErrorKind> {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_link_names_the_ip_family_the_download_must_use() {
+        let family = |raw: &str| signed_ip_family(&reqwest::Url::parse(raw).unwrap());
+        assert_eq!(
+            family("https://rr1.googlevideo.com/videoplayback?ip=203.0.113.9&id=x"),
+            Some(std::net::Ipv4Addr::UNSPECIFIED.into())
+        );
+        assert_eq!(
+            family("https://rr1.googlevideo.com/videoplayback?id=x&ip=2001%3Adb8%3A%3A1"),
+            Some(std::net::Ipv6Addr::UNSPECIFIED.into())
+        );
+        assert_eq!(
+            family("https://rr1.googlevideo.com/videoplayback?id=x"),
+            None
+        );
+        assert_eq!(
+            family("https://rr1.googlevideo.com/videoplayback?ip=nope"),
+            None
+        );
+    }
+
     use super::*;
     use innerlight::{Client, FixtureTransport};
     use serde_json::json;
