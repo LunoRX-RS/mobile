@@ -25,11 +25,13 @@ const DEBUG_HOOK = `(function(){
   setTimeout(function(){report('T5');},5000);
 })();`;
 
+const DEBUG_OVERLAY = process.env.NODE_ENV !== "production";
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body>
-        {true && (
+        {DEBUG_OVERLAY && (
           <Script id="lunorx-debug" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: DEBUG_HOOK }} />
         )}
         {children}

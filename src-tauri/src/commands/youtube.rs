@@ -119,31 +119,37 @@ fn main_only(window: &WebviewWindow) -> Result<(), YouTubeError> {
         Err(YouTubeError::Forbidden)
     }
 }
+/// YouTube answers a phone user agent with the mobile site at `m.youtube.com`, and every other `*.youtube.com` host
+/// belongs to the same service. The leading dot in the suffix check keeps a lookalike such as `evil-youtube.com` out.
 #[cfg(desktop)]
-fn youtube_origin(url: &tauri::Url) -> bool {
-    url.scheme() == "https"
-        && matches!(
-            url.host_str(),
-            Some("www.youtube.com" | "music.youtube.com" | "youtube.com")
-        )
-        && url.username().is_empty()
-        && url.password().is_none()
-        && url.port().is_none()
+fn youtube_host(host: &str) -> bool {
+    host == "youtube.com" || host.ends_with(".youtube.com")
 }
-/// After sign-in Google moves the flow to the account's country domain, for example `accounts.google.co.th`.
-/// Only `accounts.google.<cc>`, `accounts.google.co.<cc>` and `accounts.google.com.<cc>` with two-letter country codes
-/// pass, so a lookalike such as `accounts.google.evil.test` or `accounts.google.com.evil.test` does not.
+/// Google runs sign-in across its own host family: `google.com` and subdomains such as `accounts.google.com`,
+/// `consent.google.com` and `ogs.google.com`, plus the account's country domain in the forms `google.<cc>`,
+/// `google.co.<cc>` and `google.com.<cc>` with a two-letter country code. A lookalike such as `notgoogle.com`,
+/// `google.co.th.evil.test` or `google.com.evil` does not pass.
 #[cfg(desktop)]
-fn google_country_accounts(host: &str) -> bool {
-    let Some(rest) = host.strip_prefix("accounts.google.") else {
+fn google_host(host: &str) -> bool {
+    let labels: Vec<&str> = host.split('.').collect();
+    let Some(index) = labels.iter().position(|label| *label == "google") else {
         return false;
     };
     let code = |s: &str| s.len() == 2 && s.bytes().all(|b| b.is_ascii_lowercase());
-    match rest.split('.').collect::<Vec<_>>().as_slice() {
+    match &labels[index + 1..] {
+        ["com"] => true,
         [cc] => code(cc),
         ["co" | "com", cc] => code(cc),
         _ => false,
     }
+}
+#[cfg(desktop)]
+fn youtube_origin(url: &tauri::Url) -> bool {
+    url.scheme() == "https"
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.port().is_none()
+        && url.host_str().is_some_and(youtube_host)
 }
 #[cfg(desktop)]
 fn login_navigation(url: &tauri::Url) -> bool {
@@ -151,26 +157,13 @@ fn login_navigation(url: &tauri::Url) -> bool {
     if url.as_str() == "about:blank" {
         return true;
     }
-    youtube_origin(url)
-        || (url.scheme() == "https"
-            && url.port().is_none()
-            && url.username().is_empty()
-            && url.password().is_none()
-            && url.host_str().is_some_and(google_country_accounts))
-        || (url.scheme() == "https"
-            && url.port().is_none()
-            && url.username().is_empty()
-            && url.password().is_none()
-            && matches!(
-                url.host_str(),
-                Some(
-                    "accounts.google.com"
-                        | "accounts.youtube.com"
-                        | "consent.google.com"
-                        | "consent.youtube.com"
-                        | "myaccount.google.com"
-                )
-            ))
+    url.scheme() == "https"
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url
+            .host_str()
+            .is_some_and(|host| youtube_host(host) || google_host(host))
 }
 
 fn session_cookie(cookies: &[Cookie<'_>]) -> Option<String> {
@@ -626,16 +619,25 @@ mod tests {
         assert!(session_cookie(&bad).is_none());
     }
     #[test]
-    fn login_navigation_has_exact_https_host_allowlist() {
+    fn login_navigation_stays_on_youtube_and_google_hosts() {
         for url in [
             "https://accounts.google.com/signin",
             "https://accounts.google.co.th/signin",
             "https://accounts.google.com.au/",
             "https://accounts.google.de/",
+            "https://www.google.com/accounts/SetSID",
+            "https://ogs.google.com/u/0/widget",
+            "https://google.com/",
+            "https://google.co.th/",
+            "https://consent.youtube.com/m",
             "about:blank",
+            "https://youtube.com/",
+            "https://www.youtube.com/",
+            // iPhone user agents are sent to the mobile site, which the exact list did not cover.
+            "https://m.youtube.com/watch?v=abc",
             "https://music.youtube.com/",
         ] {
-            assert!(login_navigation(&url.parse().unwrap()));
+            assert!(login_navigation(&url.parse().unwrap()), "{url}");
         }
         for url in [
             "http://accounts.google.com/",
@@ -643,13 +645,32 @@ mod tests {
             "https://accounts.google.evil/",
             "https://accounts.google.co.evil/",
             "https://accounts.google.th.evil.test/",
-            "https://google.co.th/",
+            "https://google.co.th.evil.test/",
+            "https://google.com.evil/",
+            "https://notgoogle.com/",
+            "https://google..com/",
+            "https://accounts.google.com./",
+            "https://m.youtube.com.evil.test/",
+            "https://evil-youtube.com/",
+            "https://music.youtube.com:8443/",
             "about:srcdoc",
             "https://evil.test/",
             "file:///tmp/anything",
             "https://u@music.youtube.com/",
         ] {
-            assert!(!login_navigation(&url.parse().unwrap()));
+            assert!(!login_navigation(&url.parse().unwrap()), "{url}");
         }
+    }
+    #[test]
+    fn youtube_origin_includes_the_mobile_site() {
+        for url in [
+            "https://youtube.com/",
+            "https://www.youtube.com/",
+            "https://m.youtube.com/",
+            "https://music.youtube.com/",
+        ] {
+            assert!(youtube_origin(&url.parse().unwrap()), "{url}");
+        }
+        assert!(!youtube_origin(&"https://www.google.com/".parse().unwrap()));
     }
 }

@@ -8,9 +8,9 @@ import { addToPlaylist, downloadPlaylist, listPlaylists, playPlaylist } from "./
 import { playerOpenExternal, playerQueueEdit } from "../services/tauri/player";
 import type { SearchHitDto } from "../services/tauri/search";
 import type { LocalPlaylistDto } from "../services/tauri/sync";
+import { copyText } from "./clipboard";
 
 const ICON = 14;
-const copy = (text: string) => { try { void navigator.clipboard?.writeText(text); } catch { /* clipboard blocked: nothing to do */ } };
 
 /** Right-click menu for a track row. `onRemove` adds "Remove from this playlist" when the row sits in one. */
 export function trackMenu(hit: SearchHitDto, opts: { onRemove?: () => void; onMoveUp?: () => void; onMoveDown?: () => void; following?: SearchHitDto[] } = {}) {
@@ -24,7 +24,7 @@ export function trackMenu(hit: SearchHitDto, opts: { onRemove?: () => void; onMo
     items.push({ label: liked ? "Remove from Liked Songs" : "Add to Liked Songs", icon: liked ? <HeartOff size={ICON} /> : <Heart size={ICON} />, onSelect: () => void toggleSaved(hit) });
     if (artist) items.push({ label: `Go to ${artist.name}`, icon: <User size={ICON} />, onSelect: () => useUi.getState().openArtist(artist) });
     if (youtube) items.push({ label: "Open on YouTube", icon: <ExternalLink size={ICON} />, onSelect: () => void playerOpenExternal({ provider: hit.provider, providerTrackId: hit.providerTrackId, canonicalUrl: hit.canonicalUrl }).catch(() => {}) });
-    items.push({ label: "Copy link", icon: <Link2 size={ICON} />, onSelect: () => copy(hit.canonicalUrl) });
+    items.push({ label: "Copy link", icon: <Link2 size={ICON} />, onSelect: () => void copyText(hit.canonicalUrl) });
     if (opts.onMoveUp || opts.onMoveDown) items.push({ kind: "separator" }, { label: "Move up", icon: <ArrowUp size={ICON} />, disabled: !opts.onMoveUp, onSelect: () => opts.onMoveUp?.() }, { label: "Move down", icon: <ArrowDown size={ICON} />, disabled: !opts.onMoveDown, onSelect: () => opts.onMoveDown?.() });
     if (opts.onRemove) items.push({ kind: "separator" }, { label: "Remove from this playlist", icon: <Trash2 size={ICON} />, danger: true, onSelect: opts.onRemove });
     return items;

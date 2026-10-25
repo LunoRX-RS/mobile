@@ -351,7 +351,12 @@ class LunorNativePlugin(private val activity: Activity) : Plugin(activity) {
             }
             fun jar(): JSArray {
                 val out = JSArray()
-                for ((url, domain) in listOf("https://www.youtube.com" to "youtube.com", "https://music.youtube.com" to "youtube.com", "https://www.google.com" to "google.com")) {
+                for ((url, domain) in listOf(
+                    "https://www.youtube.com" to "youtube.com",
+                    "https://m.youtube.com" to "youtube.com",
+                    "https://music.youtube.com" to "youtube.com",
+                    "https://www.google.com" to "google.com",
+                )) {
                     cookies.getCookie(url)?.split(";")?.forEach { pair ->
                         val i = pair.indexOf('=')
                         if (i > 0) out.put(JSObject().put("name", pair.substring(0, i).trim()).put("value", pair.substring(i + 1).trim()).put("domain", domain))
@@ -430,28 +435,36 @@ class LunorNativePlugin(private val activity: Activity) : Plugin(activity) {
 
 /** Same rules as `login_navigation` / `youtube_origin` in src/commands/youtube.rs. */
 object SignInHosts {
-    private val fixed = setOf(
-        "www.youtube.com", "music.youtube.com", "youtube.com",
-        "accounts.google.com", "accounts.youtube.com", "consent.google.com", "consent.youtube.com", "myaccount.google.com",
-    )
-
     private fun plain(uri: Uri) = uri.scheme == "https" && uri.port == -1 && uri.userInfo == null
 
-    fun youtubeOrigin(uri: Uri?): Boolean =
-        uri != null && plain(uri) && uri.host in setOf("www.youtube.com", "music.youtube.com", "youtube.com")
+    /** YouTube answers a phone user agent with `m.youtube.com`; every other `*.youtube.com` host is the same service. */
+    private fun youtubeHost(host: String) = host == "youtube.com" || host.endsWith(".youtube.com")
 
-    fun allowed(uri: Uri): Boolean {
-        if (uri.toString() == "about:blank") return true
-        val host = uri.host ?: return false
-        if (!plain(uri)) return false
-        if (host in fixed) return true
-        if (!host.startsWith("accounts.google.")) return false
-        val rest = host.removePrefix("accounts.google.").split(".")
+    /**
+     * `google.com` and its subdomains (accounts, consent, the One Google Bar), plus the account's country domain in
+     * the forms `google.<cc>`, `google.co.<cc>` and `google.com.<cc>` with a two-letter code. Lookalikes such as
+     * `notgoogle.com` or `google.co.th.evil.test` do not pass.
+     */
+    private fun googleHost(host: String): Boolean {
+        val labels = host.split(".")
+        val index = labels.indexOf("google")
+        if (index < 0) return false
+        val rest = labels.subList(index + 1, labels.size)
         val code = { c: String -> c.length == 2 && c.all { it in 'a'..'z' } }
         return when (rest.size) {
-            1 -> code(rest[0])
+            1 -> rest[0] == "com" || code(rest[0])
             2 -> (rest[0] == "co" || rest[0] == "com") && code(rest[1])
             else -> false
         }
+    }
+
+    fun youtubeOrigin(uri: Uri?): Boolean =
+        uri != null && plain(uri) && uri.host?.lowercase()?.let(::youtubeHost) == true
+
+    fun allowed(uri: Uri): Boolean {
+        if (uri.toString() == "about:blank") return true
+        if (!plain(uri)) return false
+        val host = uri.host?.lowercase() ?: return false
+        return youtubeHost(host) || googleHost(host)
     }
 }

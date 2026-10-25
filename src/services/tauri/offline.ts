@@ -14,6 +14,8 @@ export function offlineError(e: unknown): string {
     case "busy": return "Another playlist is downloading. Finish or cancel it first.";
     case "storage": return "Could not access offline storage. Check free disk space and file permissions.";
     case "download": return "Could not download this song. Try again when YouTube is available.";
+    case "mediaRefused": return "YouTube refused the audio bytes. Sign in with Google in Connections, then try again.";
+    case "verificationRequired": return "YouTube asked for verification. Sign in with Google in Connections.";
     case "validation": return "This playlist cannot be downloaded.";
     default: return "Offline storage is unavailable.";
   }

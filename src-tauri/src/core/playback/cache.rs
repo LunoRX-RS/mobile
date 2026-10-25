@@ -39,6 +39,8 @@ pub enum CacheError {
     InUse,
     /// YouTube asked for a sign-in or verification instead of giving a stream.
     VerificationRequired,
+    /// The media host refused the audio bytes themselves; without a signed-in session only part of a stream is served.
+    MediaRefused,
 }
 type Result<T> = std::result::Result<T, CacheError>;
 
@@ -723,7 +725,11 @@ async fn download(audio: &ResolvedAudio, path: &Path) -> Result<()> {
             CacheError::Download
         })?;
     if !response.status().is_success() {
-        stage_log!("[debug] download: http {}", response.status().as_u16());
+        let status = response.status().as_u16();
+        stage_log!("[debug] download: http {status}");
+        if matches!(status, 401 | 403 | 404 | 410) {
+            return Err(CacheError::MediaRefused);
+        }
         return Err(CacheError::Download);
     }
     let mut options = fs::OpenOptions::new();
@@ -1217,6 +1223,38 @@ mod tests {
         worker.abort();
         let _ = worker.await;
         upstream.abort();
+        assert!(!path.exists());
+    }
+    #[tokio::test]
+    async fn a_refused_media_fetch_is_reported_as_a_sign_in_problem() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let dir = Fixture::new();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/audio", listener.local_addr().unwrap());
+        let upstream = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut header = Vec::new();
+            while !header.ends_with(b"\r\n\r\n") {
+                header.push(socket.read_u8().await.unwrap());
+            }
+            assert!(
+                String::from_utf8_lossy(&header)
+                    .to_ascii_lowercase()
+                    .contains("range: bytes=0-99\r\n")
+            );
+            socket
+                .write_all(
+                    b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .await
+                .unwrap();
+        });
+        let path = dir.0.join("refused.part");
+        let error = download(&ResolvedAudio { url, size: 100 }, &path)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, CacheError::MediaRefused));
+        upstream.await.unwrap();
         assert!(!path.exists());
     }
     #[test]

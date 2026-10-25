@@ -12,6 +12,7 @@ import {
   type MLine, type Stamp,
 } from "../lib/lyricMaker";
 import { lrcErrorText, lrcLoad, lrcReveal, lrcSave, type LrcSaveArgs } from "../services/tauri/lrc";
+import { copyText } from "../lib/clipboard";
 import { formatDuration } from "../lib/media";
 import { IconButton, Scrubber } from "./ui";
 import { TrackCover } from "./TrackCover";
@@ -369,7 +370,7 @@ export function LyricMaker({ trackId, inset, onClose }: { trackId: string; inset
                 <button type="button" aria-label="Reveal in Finder" title="Reveal in Finder" className="ln-mk-chip"
                   onClick={() => lrcReveal(trackId).catch(() => setNotice("Could not open Finder."))}><FolderOpen size={14} aria-hidden="true" /> Reveal in Finder</button>
                 <button type="button" aria-label="Copy path" title="Copy path" className="ln-mk-chip"
-                  onClick={() => navigator.clipboard.writeText(save.path ?? "").then(() => setNotice("Path copied.")).catch(() => setNotice("Could not copy the path."))}><Copy size={14} aria-hidden="true" /> Copy path</button>
+                  onClick={() => void copyText(save.path ?? "").then((ok) => setNotice(ok ? "Path copied." : "Could not copy the path."))}><Copy size={14} aria-hidden="true" /> Copy path</button>
               </div>)}
             {notice && <p role="status" className="ln-mk-status">{notice}</p>}
           </div>

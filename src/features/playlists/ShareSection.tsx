@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button, StatusNote } from "../../components/ui";
 import { CATEGORY_MESSAGES } from "../sync/SyncPanel";
 import { syncListShares, syncRevokeShare, syncShare, type ErrorCategory, type ShareDto } from "../../services/tauri/sync";
+import { copyText } from "../../lib/clipboard";
 
 // Read-only links to an uploaded playlist. Anyone with a link can read the playlist; revoking stops that link at once.
 // The link contains its token, so it is shown here and never logged.
@@ -67,12 +68,8 @@ export function ShareSection({
 
   async function copy() {
     if (!link) return;
-    try {
-      await navigator.clipboard.writeText(link);
-      setCopied(true);
-    } catch {
-      setError("Could not copy. Select the link and copy it yourself.");
-    }
+    if (await copyText(link)) setCopied(true);
+    else setError("Could not copy. Select the link and copy it yourself.");
   }
 
   if (!signedIn) {
