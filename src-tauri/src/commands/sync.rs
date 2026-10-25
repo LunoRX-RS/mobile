@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::sync::{Mutex as StdMutex, PoisonError};
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 use tokio::sync::{Mutex as TokioMutex, MutexGuard as TokioMutexGuard};
 
 use crate::sync::api::Provider;
@@ -464,6 +464,7 @@ async fn with_antibot<T>(
 
 #[tauri::command]
 pub async fn sync_register(
+    app: AppHandle,
     state: State<'_, SyncEngineState>,
     email: String,
     password: String,
@@ -472,33 +473,50 @@ pub async fn sync_register(
 ) -> Result<SignedInDto, ErrorCategory> {
     let tokens = antibot_tokens([register_token, login_token])?;
     // run_register takes the network lock itself, so queue and run under one hold of it instead.
-    with_antibot(
+    let out = with_antibot(
         &state,
         tokens,
         run_register_locked(&state, &email, &password),
     )
-    .await
+    .await?;
+    kick_likes(&app);
+    Ok(out)
 }
 
 #[tauri::command]
 pub async fn sync_sign_in(
+    app: AppHandle,
     state: State<'_, SyncEngineState>,
     email: String,
     password: String,
     token: Option<String>,
 ) -> Result<SignedInDto, ErrorCategory> {
     let tokens = antibot_tokens([token, None])?;
-    with_antibot(
+    let out = with_antibot(
         &state,
         tokens,
         run_sign_in_locked(&state, &email, &password),
     )
-    .await
+    .await?;
+    kick_likes(&app);
+    Ok(out)
 }
 
 #[tauri::command]
-pub async fn sync_sign_out(state: State<'_, SyncEngineState>) -> Result<SignOutDto, ErrorCategory> {
-    run_sign_out(&state).await
+pub async fn sync_sign_out(
+    app: AppHandle,
+    state: State<'_, SyncEngineState>,
+) -> Result<SignOutDto, ErrorCategory> {
+    let out = run_sign_out(&state).await?;
+    kick_likes(&app);
+    Ok(out)
+}
+
+/// The liked-songs engine re-reads the token and switches the local library to the matching account.
+fn kick_likes(app: &AppHandle) {
+    if let Some(likes) = app.try_state::<crate::commands::likes::LikesState>() {
+        likes.kick();
+    }
 }
 
 #[tauri::command]

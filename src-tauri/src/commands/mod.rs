@@ -14,6 +14,8 @@ pub mod offline;
 
 pub mod library;
 
+pub mod likes;
+
 pub mod stats;
 
 pub mod telemetry;

@@ -1,8 +1,11 @@
 use crate::core::library::{ArtistProfile, LibraryError, SavedLibrary, SavedTrack};
-use tauri::{AppHandle, Emitter, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 pub struct LibraryState {
-    library: std::sync::Mutex<Result<SavedLibrary, LibraryError>>,
+    inner: std::sync::Mutex<Inner>,
+}
+struct Inner {
     path: Result<std::path::PathBuf, LibraryError>,
+    library: Result<SavedLibrary, LibraryError>,
 }
 impl LibraryState {
     pub fn open(path: Result<std::path::PathBuf, LibraryError>) -> Self {
@@ -14,23 +17,31 @@ impl LibraryState {
             eprintln!("device library unavailable: {kind:?}");
         }
         Self {
-            library: std::sync::Mutex::new(library),
-            path,
+            inner: std::sync::Mutex::new(Inner { path, library }),
         }
     }
     pub(crate) fn with<T>(
         &self,
         action: impl FnOnce(&SavedLibrary) -> Result<T, LibraryError>,
     ) -> Result<T, LibraryError> {
-        let mut library = self.library.lock().map_err(|_| LibraryError::Storage)?;
-        if library.is_err() {
-            *library = self
+        let mut inner = self.inner.lock().map_err(|_| LibraryError::Storage)?;
+        if inner.library.is_err() {
+            inner.library = inner
                 .path
                 .as_ref()
                 .map_err(|e| *e)
                 .and_then(|p| SavedLibrary::open(p.clone()));
         }
-        action(library.as_ref().map_err(|e| *e)?)
+        action(inner.library.as_ref().map_err(|e| *e)?)
+    }
+    /// Opens another account's file. On failure the current file stays in place and in use.
+    pub fn switch(&self, path: std::path::PathBuf) -> Result<(), LibraryError> {
+        let mut inner = self.inner.lock().map_err(|_| LibraryError::Storage)?;
+        let opened = SavedLibrary::open(path.clone())?;
+        // Assigning drops the old file handle, which releases its lock.
+        inner.library = Ok(opened);
+        inner.path = Ok(path);
+        Ok(())
     }
 }
 pub struct HistoryState(pub LibraryState);
@@ -76,7 +87,14 @@ pub fn library_set_like(
     main(&window)?;
     let youtube_id = (track.provider == crate::core::domain::ProviderId::YouTube)
         .then(|| track.provider_track_id.clone());
-    let result = state.with(|library| library.set_like(track, liked))?;
+    // The gate keeps the local write and the queued change on the same account as an in-flight sign-in or sign-out.
+    let likes = app.try_state::<crate::commands::likes::LikesState>();
+    let gate = likes.as_ref().map(|likes| likes.gate());
+    let result = state.with(|library| library.set_like(track.clone(), liked))?;
+    if let Some(likes) = &likes {
+        likes.note_like(&track, liked);
+    }
+    drop(gate);
     // Sent to the YouTube account only when the user turned that on; it never delays or fails the local like.
     if let Some(id) = youtube_id {
         crate::commands::youtube_import::push_like(&app, &id, liked);

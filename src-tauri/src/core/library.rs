@@ -156,6 +156,51 @@ impl SavedLibrary {
         }
         self.commit(&mut tracks, next)
     }
+    /// Replaces the whole list with `incoming`, keeping valid tracks only and dropping duplicates. The caller owns the
+    /// order (the server sends newest first). The cap and size limit are enforced by `commit`.
+    pub fn replace(&self, incoming: Vec<SavedTrack>) -> Result<Vec<SavedTrack>, LibraryError> {
+        let mut tracks = self.tracks.lock().map_err(|_| LibraryError::Storage)?;
+        let mut next = Vec::new();
+        let mut keys = std::collections::HashSet::new();
+        for mut track in incoming {
+            if next.len() >= 5000 {
+                break;
+            }
+            if track.validate().is_err()
+                || !keys.insert((track.provider.clone(), track.provider_track_id.clone()))
+            {
+                continue;
+            }
+            next.push(track);
+        }
+        self.commit(&mut tracks, next)
+    }
+    pub fn remove_like(
+        &self,
+        provider: &ProviderId,
+        provider_track_id: &str,
+    ) -> Result<Vec<SavedTrack>, LibraryError> {
+        let mut tracks = self.tracks.lock().map_err(|_| LibraryError::Storage)?;
+        let mut next = tracks.clone();
+        next.retain(|t| t.provider != *provider || t.provider_track_id != provider_track_id);
+        if next.len() == tracks.len() {
+            return Ok(tracks.clone());
+        }
+        self.commit(&mut tracks, next)
+    }
+    pub fn get(
+        &self,
+        provider: &ProviderId,
+        provider_track_id: &str,
+    ) -> Result<Option<SavedTrack>, LibraryError> {
+        Ok(self
+            .tracks
+            .lock()
+            .map_err(|_| LibraryError::Storage)?
+            .iter()
+            .find(|t| t.provider == *provider && t.provider_track_id == provider_track_id)
+            .cloned())
+    }
     /// Adds tracks that are not in the list yet, after the ones already there, up to `cap` entries in total.
     /// Invalid tracks are skipped. Returns how many were added.
     pub fn merge_append(
@@ -561,6 +606,40 @@ mod tests {
         }
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
+    #[test]
+    fn replace_drops_invalid_and_duplicate_rows_and_removal_is_keyed() {
+        let path = path();
+        let lib = SavedLibrary::open(path.clone()).unwrap();
+        let mut second = track();
+        second.provider_track_id = "aqz-KE-bpKQ".into();
+        second.canonical_url = "https://www.youtube.com/watch?v=aqz-KE-bpKQ".into();
+        let mut invalid = track();
+        invalid.provider_track_id = "bad id".into();
+        let list = lib
+            .replace(vec![track(), invalid, second.clone(), track()])
+            .unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].provider_track_id, "r-G2pKr2_n8");
+        assert_eq!(list[1].provider_track_id, "aqz-KE-bpKQ");
+        assert!(
+            lib.get(&ProviderId::YouTube, "aqz-KE-bpKQ")
+                .unwrap()
+                .is_some()
+        );
+        let left = lib
+            .remove_like(&ProviderId::YouTube, "r-G2pKr2_n8")
+            .unwrap();
+        assert_eq!(left.len(), 1);
+        assert!(
+            lib.get(&ProviderId::YouTube, "r-G2pKr2_n8")
+                .unwrap()
+                .is_none()
+        );
+        assert!(lib.replace(vec![]).unwrap().is_empty());
+        drop(lib);
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
     #[test]
     fn second_library_open_is_in_use_and_recovers_after_release() {
         let path = path();

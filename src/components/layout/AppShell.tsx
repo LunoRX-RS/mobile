@@ -2,6 +2,7 @@
 
 import { loadCustomFonts } from "../../lib/textStyle";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "motion/react";
 import { initHistory } from "../../lib/history";
 import { initBackNav } from "../../lib/backNav";
@@ -149,6 +150,19 @@ export default function AppShell() {
   useEffect(() => initHistory(), []);
   useEffect(() => initTelemetry(), []);
   useEffect(() => initRemote(), []);
+  // Likes can change on another device: the sync engine emits the same event a local toggle does.
+  useEffect(() => {
+    let active = true;
+    let unlisten: UnlistenFn | undefined;
+    void listen("core://library/changed", () => void refreshLikes()).then((fn) => {
+      if (active) unlisten = fn;
+      else fn();
+    }).catch(() => {});
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, []);
   useEffect(() => { track(`feature.view.${view}`); }, [view]);
 
   // Demo playback clock. Only advances while the simulated state is "playing".

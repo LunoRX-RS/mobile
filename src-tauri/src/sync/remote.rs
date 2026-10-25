@@ -58,6 +58,20 @@ pub fn socket_url(base: &str, device_id: &str, name: &str, kind: &str) -> Option
     ))
 }
 
+/// `http(s)://host` becomes `ws(s)://host/api/v1/liked-songs/ws`. No query: the bearer token is the only credential and
+/// it travels in the header. `None` for any other scheme.
+pub fn likes_socket_url(base: &str) -> Option<String> {
+    let rest = if let Some(rest) = base.strip_prefix("https://") {
+        format!("wss://{rest}")
+    } else {
+        format!("ws://{}", base.strip_prefix("http://")?)
+    };
+    Some(format!(
+        "{}/api/v1/liked-songs/ws",
+        rest.trim_end_matches('/')
+    ))
+}
+
 enum Ended {
     /// The caller stopped the link (the outbound channel closed).
     Stopped,
@@ -163,6 +177,19 @@ mod tests {
                 .starts_with("ws://127.0.0.1:8080/api/")
         );
         assert_eq!(socket_url("ftp://x", "i", "n", "k"), None);
+    }
+
+    #[test]
+    fn likes_url_has_no_query_and_switches_scheme() {
+        assert_eq!(
+            likes_socket_url("https://api.example.test/").unwrap(),
+            "wss://api.example.test/api/v1/liked-songs/ws"
+        );
+        assert_eq!(
+            likes_socket_url("http://127.0.0.1:8080").unwrap(),
+            "ws://127.0.0.1:8080/api/v1/liked-songs/ws"
+        );
+        assert_eq!(likes_socket_url("ftp://x"), None);
     }
 
     use std::sync::{Arc, Mutex};

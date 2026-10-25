@@ -80,6 +80,70 @@ struct StatsList {
     tracks: Vec<StatsRow>,
 }
 
+/// One liked track as the backend stores it (`LikedTrack` in backend/openapi.yaml). The key travels in the body here and
+/// in the path for PUT/DELETE, so both shapes are built from this one struct.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LikeTrack {
+    pub provider: String,
+    pub provider_track_id: String,
+    pub canonical_url: String,
+    pub title: String,
+    pub artists: Vec<String>,
+    #[serde(default)]
+    pub artist_refs: Vec<LikeArtistRef>,
+    #[serde(default)]
+    pub source: Option<String>,
+    pub artwork_url: Option<String>,
+    pub duration_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LikeArtistRef {
+    pub provider: String,
+    #[serde(default)]
+    pub id: Option<String>,
+    pub name: String,
+}
+
+/// `GET /api/v1/liked-songs`: the whole set and the revision it belongs to.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LikeSnapshot {
+    pub revision: i64,
+    pub tracks: Vec<LikeTrack>,
+}
+
+/// `GET /api/v1/liked-songs/{provider}/{trackId}`. A missing like is 200 with `liked: false`, not an error.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LikeEntry {
+    pub liked: bool,
+    #[serde(default)]
+    pub track: Option<LikeTrack>,
+}
+
+/// The PUT body: metadata only, since the key is in the path.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LikeTrackBody<'a> {
+    pub canonical_url: &'a str,
+    pub title: &'a str,
+    pub artists: &'a [String],
+    pub artist_refs: &'a [LikeArtistRef],
+    pub source: Option<&'a str>,
+    pub artwork_url: Option<&'a str>,
+    pub duration_ms: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LikeMergeResult {
+    pub revision: i64,
+    pub added: usize,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoginResponse {
@@ -426,6 +490,78 @@ impl ApiClient {
             .delete(self.url("/api/v1/stats"))
             .bearer_auth(token);
         self.send(req).await.map(|_| ())
+    }
+
+    pub async fn list_likes(&self, token: &str) -> Result<LikeSnapshot, SyncError> {
+        let req = self
+            .http
+            .get(self.url("/api/v1/liked-songs"))
+            .bearer_auth(token);
+        decode(&self.send(req).await?)
+    }
+
+    pub async fn get_like(
+        &self,
+        token: &str,
+        provider: &str,
+        track_id: &str,
+    ) -> Result<LikeEntry, SyncError> {
+        let provider = path_id(provider)?;
+        let track_id = path_id(track_id)?;
+        let req = self
+            .http
+            .get(self.url(&format!("/api/v1/liked-songs/{provider}/{track_id}")))
+            .bearer_auth(token);
+        decode(&self.send(req).await?)
+    }
+
+    pub async fn put_like(
+        &self,
+        token: &str,
+        provider: &str,
+        track_id: &str,
+        body: &LikeTrackBody<'_>,
+    ) -> Result<(), SyncError> {
+        let provider = path_id(provider)?;
+        let track_id = path_id(track_id)?;
+        let req = self
+            .http
+            .put(self.url(&format!("/api/v1/liked-songs/{provider}/{track_id}")))
+            .bearer_auth(token)
+            .json(body);
+        self.send(req).await.map(|_| ())
+    }
+
+    pub async fn delete_like(
+        &self,
+        token: &str,
+        provider: &str,
+        track_id: &str,
+    ) -> Result<(), SyncError> {
+        let provider = path_id(provider)?;
+        let track_id = path_id(track_id)?;
+        let req = self
+            .http
+            .delete(self.url(&format!("/api/v1/liked-songs/{provider}/{track_id}")))
+            .bearer_auth(token);
+        self.send(req).await.map(|_| ())
+    }
+
+    pub async fn merge_likes(
+        &self,
+        token: &str,
+        tracks: &[LikeTrack],
+    ) -> Result<LikeMergeResult, SyncError> {
+        #[derive(Serialize)]
+        struct Body<'a> {
+            tracks: &'a [LikeTrack],
+        }
+        let req = self
+            .http
+            .post(self.url("/api/v1/liked-songs/merge"))
+            .bearer_auth(token)
+            .json(&Body { tracks });
+        decode(&self.send(req).await?)
     }
 
     /// Creates a read-only share link. The token is returned once and never logged or stored by the client.
@@ -1061,6 +1197,113 @@ mod tests {
         ));
         assert!(path_id(PLAYLIST).is_ok());
         assert!(path_id(ENTRY).is_ok());
+    }
+
+    #[tokio::test]
+    async fn likes_are_listed_read_and_written_with_the_key_in_the_path() {
+        let snapshot = r#"{"revision":4,"tracks":[{"provider":"YouTube","providerTrackId":"r-G2pKr2_n8","canonicalUrl":"https://www.youtube.com/watch?v=r-G2pKr2_n8","title":"BU","artists":["A"],"artistRefs":[{"provider":"YouTube","id":"UCuAXFkgsw1L7xaCfnd5JJOw","name":"A"}],"source":"YouTube Music","artworkUrl":null,"durationMs":166000}]}"#;
+        let s = stub(raw("200 OK", "", snapshot)).await;
+        let listed = client(&s.base).list_likes(TOKEN).await.unwrap();
+        assert_eq!(listed.revision, 4);
+        assert_eq!(listed.tracks[0].title, "BU");
+        assert_eq!(listed.tracks[0].source.as_deref(), Some("YouTube Music"));
+        let req = s.last();
+        assert_eq!(req.method, "GET");
+        assert_eq!(req.path, "/api/v1/liked-songs");
+        assert_eq!(req.auth, Some(format!("Bearer {TOKEN}")));
+
+        let s = stub(raw("200 OK", "", r#"{"liked":false}"#)).await;
+        let entry = client(&s.base)
+            .get_like(TOKEN, "YouTube", "r-G2pKr2_n8")
+            .await
+            .unwrap();
+        assert!(!entry.liked);
+        assert!(entry.track.is_none());
+        assert_eq!(s.last().path, "/api/v1/liked-songs/YouTube/r-G2pKr2_n8");
+
+        let s = stub(raw("204 No Content", "", "")).await;
+        let artists = ["A".to_string()];
+        let refs = vec![LikeArtistRef {
+            provider: "YouTube".into(),
+            id: Some("UCuAXFkgsw1L7xaCfnd5JJOw".into()),
+            name: "A".into(),
+        }];
+        client(&s.base)
+            .put_like(
+                TOKEN,
+                "YouTube",
+                "r-G2pKr2_n8",
+                &LikeTrackBody {
+                    canonical_url: "https://www.youtube.com/watch?v=r-G2pKr2_n8",
+                    title: "BU",
+                    artists: &artists,
+                    artist_refs: &refs,
+                    source: Some("YouTube Music"),
+                    artwork_url: None,
+                    duration_ms: Some(166_000),
+                },
+            )
+            .await
+            .unwrap();
+        let req = s.last();
+        assert_eq!(req.method, "PUT");
+        assert_eq!(req.path, "/api/v1/liked-songs/YouTube/r-G2pKr2_n8");
+        assert_eq!(req.auth, Some(format!("Bearer {TOKEN}")));
+        let body = json(&req.body);
+        assert_eq!(body["title"], "BU");
+        assert!(body.get("provider").is_none());
+        assert!(body.get("providerTrackId").is_none());
+
+        let s = stub(raw("204 No Content", "", "")).await;
+        client(&s.base)
+            .delete_like(TOKEN, "YouTube", "r-G2pKr2_n8")
+            .await
+            .unwrap();
+        assert_eq!(s.last().method, "DELETE");
+    }
+
+    #[tokio::test]
+    async fn merge_posts_the_tracks_and_reads_the_revision_and_count() {
+        let s = stub(raw("200 OK", "", r#"{"revision":9,"added":2}"#)).await;
+        let tracks = vec![LikeTrack {
+            provider: "YouTube".into(),
+            provider_track_id: "r-G2pKr2_n8".into(),
+            canonical_url: "https://www.youtube.com/watch?v=r-G2pKr2_n8".into(),
+            title: "BU".into(),
+            artists: vec!["A".into()],
+            artist_refs: vec![],
+            source: None,
+            artwork_url: None,
+            duration_ms: None,
+        }];
+        let merged = client(&s.base).merge_likes(TOKEN, &tracks).await.unwrap();
+        assert_eq!(merged.revision, 9);
+        assert_eq!(merged.added, 2);
+        let req = s.last();
+        assert_eq!(req.method, "POST");
+        assert_eq!(req.path, "/api/v1/liked-songs/merge");
+        assert_eq!(
+            json(&req.body)["tracks"][0]["providerTrackId"],
+            "r-G2pKr2_n8"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_missing_like_is_not_an_error_and_a_bad_provider_never_reaches_the_network() {
+        let s = stub(raw("200 OK", "", r#"{"liked":false}"#)).await;
+        assert!(
+            !client(&s.base)
+                .get_like(TOKEN, "YouTube", "r-G2pKr2_n8")
+                .await
+                .unwrap()
+                .liked
+        );
+        // Unreachable port: a request would fail with Network, so Internal proves no request was sent.
+        let c = client("http://127.0.0.1:9");
+        assert!(matches!(
+            c.get_like(TOKEN, "YouTube Music", "id").await,
+            Err(SyncError::Internal(_))
+        ));
     }
 
     #[test]
