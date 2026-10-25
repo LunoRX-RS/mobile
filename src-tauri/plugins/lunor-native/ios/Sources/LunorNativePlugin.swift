@@ -19,7 +19,6 @@ class NowPlayingArgs: Decodable {
   let durationMs: Double
   let positionMs: Double
   let playing: Bool
-  let lyric: String?
 }
 
 
@@ -192,6 +191,7 @@ class LunorNativePlugin: Plugin {
   private var pendingPlay: Invoke?
   private var ended = false
   private var failed = false
+  private var realDurationMs: Double?
   private var remote: [[String: Any]] = []
   private var artworkUrl: String?
   private var artwork: MPMediaItemArtwork?
@@ -236,6 +236,9 @@ class LunorNativePlugin: Plugin {
       }
       self.ended = false
       self.failed = false
+      // YouTube's progressive-fragmented m4a carries a placeholder moov, so AVFoundation reads exactly 2x the true
+      // duration (measured 8/8 cached streams). The top-level `sidx` box holds the real sum; take it from the file.
+      self.realDurationMs = url.isFileURL ? Self.sidxDurationMs(path: url.path) : nil
       // The cache names files `*.audio`; AVPlayer cannot sniff the container from that, so say it (AAC in MP4 is
       // the only format core hands to iOS).
       let asset = AVURLAsset(url: url, options: ["AVURLAssetOutOfBandMIMETypeKey": "audio/mp4"])
@@ -297,8 +300,8 @@ class LunorNativePlugin: Plugin {
       self.item = nil
       self.ended = false
       self.failed = false
+      self.realDurationMs = nil
       MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-      MainActor.assumeIsolated { LunorLiveActivityManager.shared.stop() }
       invoke.resolve()
     }
   }
@@ -328,6 +331,14 @@ class LunorNativePlugin: Plugin {
   /// Latest facts, read-only. `remote` is drained so each lock-screen press is delivered once.
   @objc public func poll(_ invoke: Invoke) throws {
     DispatchQueue.main.async {
+      // The item clock runs 1:1 with wall time but its timeline is the doubled one, so after the true media end
+      // AVPlayer just runs silent. Close the track at the `sidx` end instead of ~2x the length.
+      if let real = self.realDurationMs, self.player.timeControlStatus == .playing,
+        self.player.currentTime().seconds * 1000 >= real
+      {
+        self.player.pause()
+        self.ended = true
+      }
       var status = "idle"
       if self.item != nil {
         if self.failed {
@@ -345,18 +356,18 @@ class LunorNativePlugin: Plugin {
         }
       }
       let position = self.player.currentTime().seconds
-      let duration = self.item?.duration.seconds ?? 0
+      var durationMs = (self.item?.duration.seconds ?? 0)
+      durationMs = durationMs.isFinite ? max(0, durationMs * 1000) : 0
+      // Only trust `sidx` over the asset when the asset clearly exceeds it; a misread then cannot truncate a real track.
+      if let real = self.realDurationMs, durationMs > real * 1.05 { durationMs = real }
       self.lock.lock()
-      let queued = self.remote
+      let events = self.remote
       self.remote = []
       self.lock.unlock()
-      // Buttons on the Live Activity land in UserDefaults (the extension cannot reach this process directly); deliver
-      // them through the same `remote` path as lock-screen presses.
-      let events = LunorRemoteQueue.drain() + queued
       invoke.resolve([
         "status": status,
         "positionMs": position.isFinite ? max(0, position * 1000) : 0,
-        "durationMs": duration.isFinite ? max(0, duration * 1000) : 0,
+        "durationMs": durationMs,
         "remote": events,
       ])
     }
@@ -374,19 +385,8 @@ class LunorNativePlugin: Plugin {
         MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0,
       ]
       if let art = self.artwork, self.artworkUrl == args.artworkUrl { info[MPMediaItemPropertyArtwork] = art }
-      MainActor.assumeIsolated {
-        LunorLiveActivityManager.shared.apply(
-          title: args.title,
-          artist: args.artist,
-          artworkUrl: args.artworkUrl,
-          durationMs: args.durationMs,
-          positionMs: args.positionMs,
-          playing: args.playing,
-          lyric: args.lyric
-        )
-      }
-      // Two lock-screen cards by design: the system card carries transport and AirPods buttons, the Live Activity
-      // card carries the lyric line. Remote commands stay registered for the system card.
+      // The system Now Playing card is the only lock-screen / island presentation: it carries artwork, transport and
+      // AirPods buttons, driven by MPNowPlayingInfoCenter plus the remote commands registered below.
       MPNowPlayingInfoCenter.default().nowPlayingInfo = info
       MPNowPlayingInfoCenter.default().playbackState = args.playing ? .playing : .paused
       if let raw = args.artworkUrl, raw != self.artworkUrl, let url = URL(string: raw), url.scheme == "https" {
@@ -398,7 +398,6 @@ class LunorNativePlugin: Plugin {
           DispatchQueue.main.async {
             guard self.artworkUrl == raw else { return }
             self.artwork = art
-            MainActor.assumeIsolated { LunorLiveActivityManager.shared.setArtwork(image, for: raw) }
             var next = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
             next[MPMediaItemPropertyArtwork] = art
             MPNowPlayingInfoCenter.default().nowPlayingInfo = next
@@ -498,6 +497,86 @@ class LunorNativePlugin: Plugin {
     pendingLoad = nil
     pendingPlay?.reject(reason)
     pendingPlay = nil
+  }
+
+  // MARK: mp4 duration
+
+  /// Sum the segment durations of the first top-level `sidx` box (ISO 14496-12), which for YouTube's m4a streams is
+  /// the true media length. Returns milliseconds, or nil when the box is absent or unparsable (then the asset value
+  /// is used unchanged).
+  private static func sidxDurationMs(path: String) -> Double? {
+    guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+    defer { try? handle.close() }
+    // `sidx` sits before `mdat` near the front; a small stream can have a long entry table, so read up to 1 MiB.
+    let bytes = [UInt8](handle.readData(ofLength: 1 << 20))
+    func be32(_ p: Int) -> UInt32? {
+      guard p + 4 <= bytes.count else { return nil }
+      return UInt32(bytes[p]) << 24 | UInt32(bytes[p + 1]) << 16 | UInt32(bytes[p + 2]) << 8 | UInt32(bytes[p + 3])
+    }
+    func be16(_ p: Int) -> UInt16? {
+      guard p + 2 <= bytes.count else { return nil }
+      return UInt16(bytes[p]) << 8 | UInt16(bytes[p + 1])
+    }
+    var p = 0
+    while p + 8 <= bytes.count, let rawSize = be32(p) {
+      let size: Int
+      let body: Int
+      switch rawSize {
+      case 0:  // extends to end-of-file: everything past here is inside this box
+        size = bytes.count - p
+        body = p + 8
+      case 1:  // 64-bit largesize
+        guard p + 16 <= bytes.count, let high = be32(p + 8), let low = be32(p + 12) else { return nil }
+        let wide = UInt64(high) << 32 | UInt64(low)
+        guard wide <= UInt64(Int.max) else { return nil }
+        size = Int(wide)
+        body = p + 16
+      default:
+        size = Int(rawSize)
+        body = p + 8
+      }
+      guard size >= 8, body <= bytes.count else { return nil }
+      let tag = String(bytes: bytes[(p + 4)..<(p + 8)], encoding: .ascii) ?? ""
+      if tag == "sidx" {
+        // Locate the entry table self-validating: the u16 just before the table equals the number of 12-byte entries
+        // that exactly fill the box. ISO says body+18 (v0) / body+26 (v1); YouTube's muxer writes the header 4 bytes
+        // longer, so scan the first 64 body bytes rather than assume one offset.
+        let boxEnd = p + size
+        var table: (start: Int, count: Int)? = nil
+        var cand = body + 20
+        while cand + 2 <= min(boxEnd, body + 64), table == nil {
+          if let n = be16(cand - 2), boxEnd > cand, (boxEnd - cand) % 12 == 0, Int(n) * 12 == boxEnd - cand {
+            table = (cand, Int(n))
+          }
+          cand += 4
+        }
+        guard let table else { return nil }
+        // AAC in MP4 is the only container core hands iOS, so the timescale is the sample rate; find it among the
+        // header words instead of trusting one position (YouTube's shifted header puts it at body+8, not body+4).
+        var timescale: UInt32? = nil
+        var q = body + 4
+        while q + 4 <= table.start {
+          if let v = be32(q), v == 44100 || v == 48000 {
+            timescale = v
+            break
+          }
+          q += 4
+        }
+        guard let timescale else { return nil }
+        var entry = table.start
+        var total: UInt64 = 0
+        for _ in 0..<table.count {
+          guard let segmentDuration = be32(entry + 4) else { return nil }
+          total += UInt64(segmentDuration)
+          entry += 12
+        }
+        return Double(total) * 1000.0 / Double(timescale)
+      }
+      // The next box starts past what was read: the sidx (if any) is beyond, so stop without a value.
+      guard p + size <= bytes.count else { return nil }
+      p += size
+    }
+    return nil
   }
 }
 

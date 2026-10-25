@@ -11,9 +11,17 @@ This folder is the desktop app reshaped for phones and tablets. It shares the Ru
 | Secrets | `keyring` (Keychain, Credential Manager, Secret Service) | iOS: Keychain, class `AfterFirstUnlockThisDeviceOnly` so items stay off backups and readable while locked (`platform/ios_keyring.rs`). Android: Keystore AES-GCM through the plugin (`platform/android_keyring.rs`), app backup off. No plaintext fallback |
 | Google sign-in | Second Tauri window | Tauri cannot open a second window on mobile, so the plugin shows a full-screen native web view (`signIn`). Core validates and stores the cookies exactly as on desktop (`youtube.rs::finalize`) |
 | Navigation | Sidebar + top bar | `< 700 px`: bottom tab bar + mini player. `700-1099 px` (iPad portrait): icon rail. `>= 1100 px` (iPad landscape): full sidebar. See `src/lib/layout.ts` |
-| Not present | | Discord presence, system/imported fonts, app zoom, keyboard shortcuts, single-instance, `Make lyrics file` on phones |
-
 The core still owns playback state. A track is `PLAYING` only after the platform player confirms it. Lock-screen and headphone presses are queued by the plugin as `remote` events and sent back through the same core path as the in-app buttons (`platform/control.rs`).
+
+### Feature gap vs desktop (verified against `../desktop` on 2026-10-25)
+
+The old one-line "Not present" claim understated the gap. Three honest categories:
+
+**Not implemented here at all.** Backend: error reports and the activity log (`commands/reports.rs`, `core/errorlog`, `core/activity`), share links `lunorx://share/{token}` (`commands/share`, `core/share_link`, deep-link plugin), `youtube_import_playlist_from_url`, `sync_check_playlists`, `sync_set_playlist_description`, auto-sync (`sync::start_auto_sync`), offline usage / clear-transient, `discord_preview`, taste search (`core/playback/taste`), search cache and ranking (`core/search/{cache,rank}`). UI: Replay screen, Shared screen, LinkPlay (paste a YouTube link), QueuePanel, SyncAllButton, TrackRail, UpdateBanner / ErrorReportBanner / NoticeBar, Activity / Reports settings, the 11-zone settings IA.
+
+**Impossible on a phone — stays desktop-only.** Tray icon, app menu, MPRIS, libmpv audio-device picking, the self-updater (`tauri-plugin-updater`; app stores forbid self-update), single-instance, keyboard shortcuts, and Discord presence over the local IPC socket (no Discord app on iOS/Android).
+
+**Present but gated off phones, not deleted.** Discord settings (commands still compiled and registered), app zoom (`setZoom` + capability remain), system / imported fonts (`platform_families()` returns empty on mobile) — all hidden via `DESKTOP_ONLY_GROUPS` / `DESKTOP_ONLY_CATEGORIES` in `src/lib/layout.ts`. `Make lyrics file` is hidden only on phones; it works on tablet widths.
 
 ## The `lunor-native` plugin
 
@@ -28,6 +36,8 @@ Only `file://` URLs (the disk cache) and `http://127.0.0.1` (loopback proxy) are
 ## iOS audio format
 
 AVPlayer cannot play Opus in WebM. On iOS the stream selection (`extract.rs::platform_playable`, `visionos.rs::select`) keeps AAC in MP4 only. The cache names files `*.audio`, which AVPlayer cannot sniff, so the plugin passes `AVURLAssetOutOfBandMIMETypeKey: audio/mp4`. That key is not in Apple's public documentation; if a future iOS rejects it, rename the cache file to `.m4a` instead.
+
+**Duration.** YouTube progressive-fragmented m4a carries a placeholder `moov` whose timescale pair makes AVFoundation report exactly twice the true duration (measured on 8/8 cached streams; no asset option fixes it). Position still advances 1:1 with wall time, so after the real end AVPlayer runs silent until the doubled timeline ends. The plugin therefore parses the first top-level `sidx` box from the cached file (its entry durations sum to the true length; YouTube muxes the box with a 24-byte header, four longer than ISO 14496-12, so the code finds the entry table by self-validation) and reports that as `durationMs` in `poll` whenever the asset value exceeds it by >5%. It also ends the track when position passes the `sidx` end, so "ended", autoplay and the lock-screen cards fire at the true time. The corrected duration flows through core into `nowPlaying` and the LRCLIB lyrics lookup (±12 s match window), which the doubled value had been silently poisoning. If `sidx` is absent or unparsable, the asset duration is used unchanged.
 
 ## Build and run
 
@@ -55,22 +65,15 @@ After `tauri ios init`, create the symlink the Xcode script phase needs (the CLI
 ln -sf ../../../node_modules/@tauri-apps/cli/tauri.js src-tauri/gen/apple/tauri
 ```
 
-### Live Activity (Dynamic Island)
+### Lock screen and Dynamic Island (native only)
 
-The lock-screen card and Dynamic Island are a WidgetKit app extension (`LunoRXLiveActivity`). Tauri regenerates the Xcode project from `gen/apple/project.yml` on every build, so the extension is patched in first:
+The lock screen and the Dynamic Island are iOS' native Now Playing presentation — no app extension, no Live Activity. `nowPlaying` fills `MPNowPlayingInfoCenter` (artwork, title, artist, elapsed, rate) and `MPRemoteCommandCenter` serves prev / play-pause / next, which iOS renders on the lock screen, in the island, on AirPods and as "Now Playing on iPhone" in macOS Control Center.
 
-```sh
-sh scripts/ios-build.sh --target aarch64-sim --ci   # patch, then tauri ios build (arguments pass through)
-python3 scripts/ios-live-activity.py --check        # verify the patch, change nothing
-```
+A custom lyrics card used to exist as a WidgetKit Live Activity (`LunoRXLiveActivity`) and was removed at the user's request. Two hard platform facts drove the trouble: every Live Activity must occupy a Dynamic Island slot (the SDK has no zero-region presentation; empty views render as a black pill), so ours always stacked a second pill beside the native Now Playing one; and ActivityKit caps attributes + state at a combined 4 KB, which the artwork/lyric payload repeatedly exceeded — over the limit the system rejects the whole activity and nothing renders. Rust and the plugin contract are unchanged apart from dropping the payload's optional `lyric`/`lyricWord`; `scripts/ios-build.sh` is now a plain `mobile-env.sh` wrapper around `tauri ios build`.
 
-Sources live outside `gen/`: `src-tauri/ios/LiveActivity/Widget` (SwiftUI), `src-tauri/ios/LiveActivity/Intents` (transport buttons), and the shared `LunorActivityAttributes` / `LunorRemoteQueue` / `LunorLiveActivityManager` in the plugin. Re-run the patch after any `tauri ios init`. A device build needs an `io.lunorx.mobile.LiveActivity` App ID and the same team as the app; with `APPLE_DEVELOPMENT_TEAM` set the script moves both targets to automatic signing. iOS 17 is the minimum (`LiveActivityIntent`). The activity is updated by `nowPlaying` and ended by `stop`; buttons only queue `previous`/`toggle`/`next`, which `poll` hands to Rust like a lock-screen press.
+Signing lives in `gen/apple/project.yml` (`CODE_SIGN_STYLE: Automatic`, `DEVELOPMENT_TEAM`); `tauri ios init` regenerates that file, so re-add those two settings after a re-init. Device builds then run from the command line with the existing profile for `io.lunorx.mobile` (the extension's App ID/profile are no longer needed).
 
-Two cards on the lock screen, by design: the system Now Playing card keeps transport, AirPods/Control Center buttons and its accurate clocks, while the LunoRX card is the lyrics card — the line core shows right now, plus art, title and a slim progress bar. `nowPlaying` always fills `MPNowPlayingInfoCenter` and also feeds the manager; the lyric line arrives as an optional `lyric` field on the same payload (Rust picks it from the LRCLIB sidecar in `platform/mobile_media.rs`, keyed by track id, and `prefetch_lyrics` starts the lookup when no cache entry exists yet). Without synced lyrics the LunoRX card falls back to title-as-hero. Android ignores the extra field (Jackson has unknown-properties disabled).
-
-Device builds — one-time extension signing. The main app reuses an already-installed development profile, but the new `io.lunorx.mobile.LiveActivity` extension has none, and command-line `xcodebuild` cannot create one without an Apple ID in Xcode's Accounts (it fails with `No Accounts` / `No profiles for 'io.lunorx.mobile.LiveActivity'`). Once, open `src-tauri/gen/apple/lunorx.xcodeproj` in Xcode, add your Apple ID under Settings → Accounts, then on the `LunoRXLiveActivity` target enable "Automatically manage signing" and pick the team; Xcode registers the App ID and creates the profile. After that, `APPLE_DEVELOPMENT_TEAM=<team> sh scripts/ios-build.sh` builds for device from the command line. (Alternative: register the App ID and an iOS App Development profile on developer.apple.com and install it.) Simulator builds need none of this.
-
-Simulator builds must go through a real codesign pass. Without `APPLE_DEVELOPMENT_TEAM` the script sets an ad-hoc "Sign to Run Locally" identity (`CODE_SIGN_IDENTITY: "-"`); never set `CODE_SIGNING_ALLOWED: NO`. A binary left to the linker's automatic signature (`codesign -dvv` shows `flags=…linker-signed`) is refused by securityd for Keychain access, so `store.get()` errors and Connections shows "The OS key store is unavailable or locked" instead of "Not connected" — Google sign-in can never complete on such a build. A correctly signed simulator build shows `flags=0x2(adhoc)`.
+Simulator builds must go through a real codesign pass. Never set `CODE_SIGNING_ALLOWED: NO`. A binary left to the linker's automatic signature (`codesign -dvv` shows `flags=…linker-signed`) is refused by securityd for Keychain access, so `store.get()` errors and Connections shows "The OS key store is unavailable or locked" instead of "Not connected" — Google sign-in can never complete on such a build. A correctly signed simulator build shows `flags=0x2(adhoc)`.
 
 ### Dev server
 
@@ -91,7 +94,7 @@ Verified on 2026-10-25:
 Not verified:
 
 - Audible output (the position advances, but nobody listened). Lock-screen controls, background playback with the screen off, audio interruptions and headphone unplug.
-- Anything on a physical device. No code signing is configured (`APPLE_DEVELOPMENT_TEAM`, Android keystore).
+- Physical iPhone: builds install and run (free-team profile for `io.lunorx.mobile`, expires 2026-10-31); the system lock-screen card and Dynamic Island were confirmed there. The custom Live Activity lyrics card was later removed (see "Lock screen and Dynamic Island"); the `io.lunorx.mobile.LiveActivity` profile it needed is no longer used. Android emulator after this run of Live Activity work: not re-run.
 - Google sign-in on both platforms (needs a real account; Google may refuse embedded web views, especially on Android).
 
 When Google sign-in stops on a Google page on a physical iPhone, the sign-in window logs host-only lines as `[youtube sign-in]` in `xcrun devicectl device console` (or in `tmp/lunorx-signin.log` when the app is launched with `LUNORX_SIGNIN_LOG=1`, then copied with `xcrun devicectl device copy from --domain-type tmp`). A `navigation blocked` line names the hop the allowlist refused; a run of `loaded: accounts.google.com` with no `closed: session captured` means Google refused the embedded view instead. The Swift (`loginNavigationAllowed`), Kotlin (`SignInHosts`) and Rust (`login_navigation`) rules must stay in step.
