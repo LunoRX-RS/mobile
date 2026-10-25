@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-offline-clear-transient"
+description = "Enables the offline_clear_transient command without any pre-configured scope."
+commands.allow = ["offline_clear_transient"]
+
+[[permission]]
+identifier = "deny-offline-clear-transient"
+description = "Denies the offline_clear_transient command without any pre-configured scope."
+commands.deny = ["offline_clear_transient"]

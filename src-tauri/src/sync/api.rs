@@ -144,7 +144,8 @@ pub struct LikeMergeResult {
     pub added: usize,
 }
 
-#[derive(Debug, Deserialize)]
+/// No `Debug`: this is the session token, and `{:?}` must not be able to print it into a log line.
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoginResponse {
     pub token: String,
@@ -158,6 +159,27 @@ pub struct SessionResponse {
     pub expires_at: String,
 }
 
+/// Shape of `GET /api/v1/shared/{token}`. Only the fields the share screen shows are read.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedPlaylist {
+    pub name: String,
+    pub description: Option<String>,
+    pub entries: Vec<SharedEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedEntry {
+    pub provider: Provider,
+    pub provider_track_id: String,
+    pub provider_url: String,
+    pub title: String,
+    pub artists: Vec<String>,
+    pub artwork_url: Option<String>,
+    pub duration_ms: Option<u64>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaylistCreateRequest {
@@ -165,12 +187,16 @@ pub struct PlaylistCreateRequest {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+/// Not Debug: `token` must never reach a log through `{:?}`.
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShareView {
     pub id: String,
     pub created_at: String,
     pub revoked_at: Option<String>,
+    /// The live link's token, sent to the owner only. Absent from older servers and for old links.
+    #[serde(default)]
+    pub token: Option<String>,
 }
 
 /// Not Debug: the token must never reach a log through `{:?}`.
@@ -315,7 +341,9 @@ fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, SyncError> {
         .map_err(|_| SyncError::Internal("unexpected response from backend".into()))
 }
 
-#[derive(Debug, Clone)]
+/// No `Debug`: the antibot queue holds single-use Cloudflare tokens, and `{:?}` must not be able to print them into a
+/// log line. Nothing in the app needs to format a client.
+#[derive(Clone)]
 pub struct ApiClient {
     base: String,
     http: reqwest::Client,
@@ -363,6 +391,10 @@ impl ApiClient {
 
     /// Hands the next register/login calls their antibot tokens, replacing any left over.
     pub fn set_antibot(&self, tokens: Vec<String>) {
+        let registry = crate::core::secrets::registry();
+        for t in &tokens {
+            registry.register(t);
+        }
         *self.antibot.lock().unwrap_or_else(|e| e.into_inner()) = tokens.into();
     }
 
@@ -443,6 +475,16 @@ impl ApiClient {
             .http
             .get(self.url("/api/v1/auth/session"))
             .bearer_auth(token);
+        decode(&self.send(req).await?)
+    }
+
+    /// Public read of a shared playlist. No session token is sent: the share token is the only credential.
+    pub async fn get_shared(&self, token: &str) -> Result<SharedPlaylist, SyncError> {
+        let token = path_id(token)?;
+        let req = self
+            .http
+            .get(self.url(&format!("/api/v1/shared/{token}")))
+            .header(reqwest::header::ACCEPT, "application/json");
         decode(&self.send(req).await?)
     }
 
@@ -591,11 +633,6 @@ impl ApiClient {
             .delete(self.url(&format!("/api/v1/playlists/{id}/shares/{share}")))
             .bearer_auth(token);
         self.send(req).await.map(|_| ())
-    }
-
-    /// The public URL a recipient opens; contains the share token, so it is shown to the user and never logged.
-    pub fn share_url(&self, share_token: &str) -> String {
-        self.url(&format!("/api/v1/shared/{share_token}"))
     }
 
     pub async fn list_playlists(&self, token: &str) -> Result<Vec<Playlist>, SyncError> {
@@ -987,15 +1024,6 @@ mod tests {
             format!("/api/v1/playlists/{PLAYLIST}/shares/{ENTRY}")
         );
         assert_eq!(req.auth, Some(format!("Bearer {TOKEN}")));
-    }
-
-    #[tokio::test]
-    async fn share_url_points_at_the_shared_endpoint() {
-        let c = client("https://backend.example.test");
-        assert_eq!(
-            c.share_url("tok"),
-            "https://backend.example.test/api/v1/shared/tok"
-        );
     }
 
     #[tokio::test]

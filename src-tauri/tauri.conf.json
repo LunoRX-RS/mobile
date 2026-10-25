@@ -22,6 +22,13 @@
       "csp": "default-src 'self'; script-src 'self' https://www.youtube.com; frame-src https://www.youtube.com https://api.lunorx.xyz; style-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' data: https://i.ytimg.com https://yt3.ggpht.com https://*.googleusercontent.com; object-src 'none'; base-uri 'self'"
     }
   },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["lunorx"]
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
@@ -39,7 +46,8 @@
     "license": "MIT",
     "licenseFile": "../LICENSE",
     "iOS": {
-      "minimumSystemVersion": "17.0"
+      "minimumSystemVersion": "17.0",
+      "infoPlist": "Info.ios.plist"
     },
     "android": {
       "minSdkVersion": 24

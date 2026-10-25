@@ -7,7 +7,6 @@ import {
   Cable,
   CirclePlay,
   Cloud,
-  ChartColumn,
   Compass,
   Heart,
   Moon,
@@ -16,6 +15,7 @@ import {
   Plus,
   Search,
   Settings,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type FocusEvent } from "react";
@@ -102,7 +102,7 @@ const NAV: NavDef[] = [
   { view: "home", label: "Listen Now", Icon: CirclePlay },
   { view: "search", label: "Search", Icon: Search },
   { view: "explore", label: "Explore", Icon: Compass },
-  { view: "stats", label: "Stats", Icon: ChartColumn },
+  { view: "replay", label: "Replay", Icon: Sparkles },
 ];
 
 function NavRow({

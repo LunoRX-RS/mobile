@@ -18,6 +18,8 @@ export interface ImportReport {
 export type ImportEvent = { state: "running" } | { state: "done"; report: ImportReport } | { state: "failed" };
 /** Imports the YouTube Music collection now (read-only toward YouTube). Rejects with "inUse" while another run is going. */
 export function youtubeImport(): Promise<ImportReport> { return invoke("youtube_import"); }
+/** Imports a single YouTube / YouTube Music playlist (by URL or id) into the local library. Rejects with an ErrorCategory string. */
+export function youtubeImportPlaylistFromUrl(url: string): Promise<string> { return invoke("youtube_import_playlist_from_url", { url }); }
 export function subscribeYouTubeImport(callback: (event: ImportEvent) => void): Promise<UnlistenFn> {
   return listen<ImportEvent>("core://youtube/import", (event) => callback(event.payload));
 }

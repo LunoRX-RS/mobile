@@ -6,6 +6,15 @@ export const offlineKeep = (playlistId: string) => invoke<void>("offline_keep", 
 export const offlineCancel = (playlistId: string) => invoke<void>("offline_cancel", { playlistId });
 export const offlineRemove = (playlistId: string) => invoke<void>("offline_remove", { playlistId });
 export const offlineSetLimit = (bytes: number) => invoke<void>("offline_set_limit", { bytes });
+/** One playlist kept offline. `bytes` includes songs it shares with another playlist. */
+export interface PlaylistUsage { id: string; name: string; tracks: number; bytes: number }
+export interface CacheUsage {
+  audioBytes: number; artworkBytes: number; lyricBytes: number; totalBytes: number;
+  limitBytes: number; clearableBytes: number; sharedBytes: number; playlists: PlaylistUsage[];
+}
+export const offlineUsage = () => invoke<CacheUsage>("offline_usage");
+/** Frees cached songs that no offline playlist keeps and the player is not using. Resolves with the bytes released. */
+export const offlineClearTransient = () => invoke<number>("offline_clear_transient");
 export function offlineError(e: unknown): string {
   switch (e) {
     case "tooLarge": return "This audio file exceeds the 64 MB per-song limit.";

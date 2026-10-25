@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { useImport } from "../../lib/youtubeImport";
 import { CATEGORY_MESSAGES } from "../sync/SyncPanel";
 import {
+  syncCheckPlaylists,
   syncListLocalPlaylists,
   syncStatus,
+  type RemoteState,
   type ErrorCategory,
   type LocalPlaylistDto,
   type SyncStatusDto,
@@ -27,6 +29,8 @@ export function useLocalPlaylists() {
   const imported = useImport((s) => s.finished);
   const [loading, setLoading] = useState(true);
   const [playlists, setPlaylists] = useState<LocalPlaylistDto[]>([]);
+  // The server's view, checked once per load. Absent while signed out or offline: labels fall back to local state.
+  const [remote, setRemote] = useState<Record<string, RemoteState>>({});
   const [error, setError] = useState<ErrorCategory | null>(null);
 
   useEffect(() => {
@@ -37,6 +41,12 @@ export function useLocalPlaylists() {
         setPlaylists(list);
         setError(null);
         setLoading(false);
+        if (list.some((p) => p.remoteId)) {
+          syncCheckPlaylists().then(
+            (states) => active && setRemote(Object.fromEntries(states.map((s) => [s.localId, s.state]))),
+            () => active && setRemote({}),
+          );
+        }
       },
       (e: unknown) => {
         if (!active) return;
@@ -55,12 +65,16 @@ export function useLocalPlaylists() {
     setVersion((v) => v + 1);
   }, []);
 
-  return { loading, playlists, error, reload };
+  const withRemote = playlists.map((p) => (remote[p.id] ? { ...p, remote: remote[p.id] } : p));
+  return { loading, playlists: withRemote, error, reload };
 }
 
 // Plain-word sync state for one playlist.
-export function describeUpload(p: LocalPlaylistDto): string {
+export function describeUpload(p: LocalPlaylistDto & { remote?: RemoteState }): string {
   if (!p.remoteId) return "Not uploaded";
+  // The server's answer wins where it knows more than this device. Nothing is sent until the user acts.
+  if (p.remote === "missingOnServer") return "Not on the server any more";
+  if (p.remote === "serverNewer") return "Changed on the server";
   if (p.unsentEntries > 0) return `Partly uploaded, ${p.uploaded} of ${p.entryCount}`;
   if (p.queuedWrites > 0) return `${p.queuedWrites} ${p.queuedWrites === 1 ? "change" : "changes"} waiting`;
   return "Synced";

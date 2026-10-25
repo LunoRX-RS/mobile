@@ -60,9 +60,19 @@ export interface LocalPlaylistDto {
   queuedWrites: number;
   // Entries past the server-held and queued ones: the unsent partial-upload tail.
   unsentEntries: number;
+  /** The note under the title; null for none. An import marker is never shown here. */
+  description: string | null;
 }
 
 export type ResolutionDto = "keepServer" | "keepMine";
+
+/** Where a local playlist stands on the server, from `sync_check_playlists`. */
+export type RemoteState = "notUploaded" | "missingOnServer" | "serverNewer" | "localChanges" | "inSync";
+
+/** Asks the server about every local playlist. Read-only: uploads nothing. Rejects when signed out or offline. */
+export function syncCheckPlaylists(): Promise<{ localId: string; state: RemoteState }[]> {
+  return invoke("sync_check_playlists");
+}
 
 export function syncListLocalPlaylists(): Promise<LocalPlaylistDto[]> {
   return invoke<LocalPlaylistDto[]>("sync_list_local_playlists");
@@ -81,12 +91,16 @@ export function syncFlushPending(): Promise<number> {
 /** Fired after sign-in or sign-out so the remote-control link can start or stop. */
 export const ACCOUNT_CHANGED = "lunorx:account-changed";
 const accountChanged = () => window.dispatchEvent(new Event(ACCOUNT_CHANGED));
+// One reload after sign-in or sign-out, so every screen starts from the new account's data. The short delay lets the
+// caller finish its own update first; the reload comes from a user action, so it cannot loop.
+const reloadOnce = () => { window.setTimeout(() => window.location.reload(), 150); };
 
 /** Creates an account and signs in with it. Rejects with "validation" for a bad email or a password outside 12 to 128 bytes. */
 export async function syncRegister(email: string, password: string, antibot: string[] = []): Promise<SignedInDto> {
   // Turnstile tokens are single use: [0] is for creating the account, [1] for the sign-in that follows.
   const done = await invoke<SignedInDto>("sync_register", { email, password, registerToken: antibot[0], loginToken: antibot[1] });
   accountChanged();
+  reloadOnce();
   return done;
 }
 
@@ -100,6 +114,8 @@ export interface ShareDto {
   id: string;
   createdAt: string;
   active: boolean;
+  /** The live link, rebuilt from the token the server keeps for the owner. Contains the token: show it, never log it. */
+  url: string | null;
 }
 
 /** Makes a read-only link for a playlist that is on the server. Rejects with "unauthenticated" when signed out. */
@@ -118,12 +134,15 @@ export function syncRevokeShare(localId: string, shareId: string): Promise<void>
 export async function syncSignIn(email: string, password: string, antibotToken?: string): Promise<SignedInDto> {
   const done = await invoke<SignedInDto>("sync_sign_in", { email, password, token: antibotToken });
   accountChanged();
+  reloadOnce();
   return done;
 }
 
 export async function syncSignOut(): Promise<SignOutDto> {
   const done = await invoke<SignOutDto>("sync_sign_out");
   accountChanged();
+  // A warning ("the server did not confirm") is shown on screen, so a reload would hide it.
+  if (!done.warning) reloadOnce();
   return done;
 }
 
@@ -154,6 +173,13 @@ export function syncDeleteLocalPlaylist(localId: string): Promise<void> {
 /** Renames a playlist that is not on the server. Rejects with "validation" for an uploaded one or a bad name. */
 export function syncRenameLocalPlaylist(localId: string, name: string): Promise<void> {
   return invoke<void>("sync_rename_local_playlist", { localId, name });
+}
+
+/** Sets (or, with null or empty text, clears) a playlist's description. An uploaded playlist changes on the server first,
+ *  so it needs a connection: rejects with "offline", "conflict" (changed elsewhere) or "validation" (text over 2000
+ *  characters, or changes are waiting to be sent). */
+export function syncSetPlaylistDescription(localId: string, description: string | null): Promise<void> {
+  return invoke<void>("sync_set_playlist_description", { localId, description });
 }
 
 /** Moves a track within a playlist that is not on the server so it ends at index `to`. */

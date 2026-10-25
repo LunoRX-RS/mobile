@@ -24,6 +24,10 @@
     "allow-youtube-connect-finish",
     "allow-youtube-connection-status",
     "allow-youtube-import",
+    "allow-youtube-import-playlist-from-url",
+    "allow-shared-link-take",
+    "allow-shared-playlist-get",
+    "allow-shared-token-from-url",
     "allow-youtube-disconnect",
     "allow-youtube-like-push-get",
     "allow-youtube-like-push-set",
@@ -38,6 +42,8 @@
     "allow-sync-add-local-entry",
     "allow-sync-upload-playlist",
     "allow-sync-list-local-playlists",
+    "allow-sync-check-playlists",
+    "allow-sync-set-playlist-description",
     "allow-sync-playlist-entries",
     "allow-sync-delete-local-playlist",
     "allow-sync-rename-local-playlist",
@@ -85,6 +91,8 @@
     "allow-offline-cancel",
     "allow-offline-remove",
     "allow-offline-set-limit",
+    "allow-offline-usage",
+    "allow-offline-clear-transient",
     {
       "identifier": "opener:allow-open-url",
       "allow": [

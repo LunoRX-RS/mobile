@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-shared-token-from-url"
+description = "Enables the shared_token_from_url command without any pre-configured scope."
+commands.allow = ["shared_token_from_url"]
+
+[[permission]]
+identifier = "deny-shared-token-from-url"
+description = "Denies the shared_token_from_url command without any pre-configured scope."
+commands.deny = ["shared_token_from_url"]

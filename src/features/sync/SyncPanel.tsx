@@ -2,6 +2,8 @@
 
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
+import { SyncAllButton } from "../../components/SyncAllButton";
+import { useSyncAll } from "../../lib/syncAll";
 import { Button, Screen } from "../../components/ui";
 import {
   syncAddLocalEntry,
@@ -57,6 +59,11 @@ function toCategory(e: unknown): ErrorCategory {
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+function SyncAllResult() {
+  const hasResult = useSyncAll((s) => s.parts.length > 0);
+  return hasResult ? <SyncAllButton showResult compact /> : null;
+}
 
 export default function SyncPanel() {
   const [status, setStatus] = useState<SyncStatusDto | null>(null);
@@ -165,10 +172,13 @@ export default function SyncPanel() {
   }
 
   const header = (
-    <Button onClick={() => void load()} disabled={busy} aria-label="Refresh sync status">
-      <RefreshCw size={14} aria-hidden="true" />
-      Refresh
-    </Button>
+    <div className="flex items-center gap-2">
+      <SyncAllButton />
+      <Button onClick={() => void load()} disabled={busy} aria-label="Refresh sync status">
+        <RefreshCw size={14} aria-hidden="true" />
+        Refresh
+      </Button>
+    </div>
   );
 
   if (!status) {
@@ -236,6 +246,7 @@ export default function SyncPanel() {
     <PageRoot>
       <Screen id="sync-title" title="Sync" caption="Keep local playlists in step with your LUNOR-X account." actions={header}>
         <div className="flex flex-col gap-8">
+          <SyncAllResult />
           {notice && (
             <Banner tone={notice.warn ? "warn" : "ok"} role="status">
               {notice.text}

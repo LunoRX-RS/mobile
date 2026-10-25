@@ -30,11 +30,35 @@ impl fmt::Display for SettingsError {
 
 impl std::error::Error for SettingsError {}
 
+/// The backend the app talks to: `LUNORX_BACKEND_URL` when set (checked by `parse_base_url` like any URL), else the local
+/// development server.
 pub fn default_base_url() -> String {
-    "https://api.lunorx.xyz".to_string()
+    std::env::var("LUNORX_BACKEND_URL")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| env!("LUNORX_DEFAULT_BACKEND_URL").to_string())
 }
 
 /// Validates and normalizes a backend base URL. std-only: no url crate.
+/// The website base that share links point at (`LUNORX_SHARE_BASE` at run time, else the build-time default).
+pub fn share_base() -> String {
+    std::env::var("LUNORX_SHARE_BASE")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| env!("LUNORX_DEFAULT_SHARE_BASE").to_string())
+}
+
+/// The link a recipient opens: `{base}/s/{token}`. The base is checked like the backend URL; `None` for a bad base or
+/// token, never a link to somewhere else.
+pub fn share_link(base: &str, token: &str) -> Option<String> {
+    let base = parse_base_url(base).ok()?;
+    let token_ok = token.len() == 43
+        && token
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    token_ok.then(|| format!("{}/s/{}", base.trim_end_matches('/'), token))
+}
+
 pub fn parse_base_url(input: &str) -> Result<String, SettingsError> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
@@ -89,8 +113,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_is_production_backend() {
-        assert_eq!(default_base_url(), "https://api.lunorx.xyz");
+    fn default_is_the_build_time_backend() {
+        // The value depends on the build's .env (production by default, a local backend in development).
+        assert!(parse_base_url(env!("LUNORX_DEFAULT_BACKEND_URL")).is_ok());
+        assert_eq!(default_base_url(), env!("LUNORX_DEFAULT_BACKEND_URL"));
     }
 
     #[test]
@@ -210,5 +236,30 @@ mod tests {
             let msg = parse_base_url(input).unwrap_err().to_string();
             assert!(!msg.contains(input), "{msg}");
         }
+    }
+
+    #[test]
+    fn the_build_time_default_is_a_valid_backend_url() {
+        assert!(parse_base_url(env!("LUNORX_DEFAULT_BACKEND_URL")).is_ok());
+    }
+
+    #[test]
+    fn share_links_point_at_the_website_page_for_the_token() {
+        let token = "a".repeat(43);
+        assert_eq!(
+            share_link("https://play.lunorx.xyz", &token).as_deref(),
+            Some(format!("https://play.lunorx.xyz/s/{token}").as_str())
+        );
+        // Trailing slash on the base does not double up.
+        assert!(
+            share_link("https://play.lunorx.xyz/", &token)
+                .unwrap()
+                .starts_with("https://play.lunorx.xyz/s/")
+        );
+        // A malformed token, or a base that is not an http(s) URL, gives no link at all.
+        assert_eq!(share_link("https://lunorx.xyz", "short"), None);
+
+        assert_eq!(share_link("ftp://lunorx.xyz", &token), None);
+        assert_eq!(share_link("https://user@lunorx.xyz", &token), None);
     }
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-check-playlists"
+description = "Enables the sync_check_playlists command without any pre-configured scope."
+commands.allow = ["sync_check_playlists"]
+
+[[permission]]
+identifier = "deny-sync-check-playlists"
+description = "Denies the sync_check_playlists command without any pre-configured scope."
+commands.deny = ["sync_check_playlists"]

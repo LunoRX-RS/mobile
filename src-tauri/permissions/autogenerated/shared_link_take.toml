@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-shared-link-take"
+description = "Enables the shared_link_take command without any pre-configured scope."
+commands.allow = ["shared_link_take"]
+
+[[permission]]
+identifier = "deny-shared-link-take"
+description = "Denies the shared_link_take command without any pre-configured scope."
+commands.deny = ["shared_link_take"]

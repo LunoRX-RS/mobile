@@ -4,6 +4,7 @@
 //! playlists and playlists whose size changed.
 use crate::{
     commands::{
+        emit::emit_main,
         library::{HistoryState, LibraryState},
         sync::SyncEngineState,
         youtube::YouTubeState,
@@ -13,6 +14,7 @@ use crate::{
         library::{LibraryError, SavedTrack},
         youtube_import::{Import, Origin, fetch},
     },
+    sync::engine::ErrorCategory,
     sync::{api::Provider, local_store::LocalEntry},
 };
 use serde::{Deserialize, Serialize};
@@ -24,7 +26,7 @@ use std::{
     },
     time::Duration,
 };
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager, State, WebviewWindow};
 
 const EVENT: &str = "core://youtube/import";
 const AUTO_EVERY_SECS: u64 = 6 * 3600;
@@ -223,8 +225,9 @@ async fn flush_likes(app: &AppHandle) {
     .await;
 }
 
-const MUSIC_MARKER: &str = "Imported from YouTube Music [";
-const YOUTUBE_MARKER: &str = "Imported from YouTube [";
+use crate::sync::local_store::{
+    MUSIC_MARKER, YOUTUBE_MARKER, marker_id as marker_line_id, split_note,
+};
 fn marker(origin: Origin, id: &str) -> String {
     let prefix = if origin == Origin::Music {
         MUSIC_MARKER
@@ -233,12 +236,9 @@ fn marker(origin: Origin, id: &str) -> String {
     };
     format!("{prefix}{id}]")
 }
-/// The playlist id inside an import marker, if the description is one.
+/// The playlist id of the import marker a description ends with, if any (the user may have added text above it).
 pub fn marker_id(description: &str) -> Option<&str> {
-    description
-        .strip_prefix(MUSIC_MARKER)
-        .or_else(|| description.strip_prefix(YOUTUBE_MARKER))
-        .and_then(|rest| rest.strip_suffix(']'))
+    split_note(description).1.and_then(marker_line_id)
 }
 /// Called when the user deletes a local playlist: an imported one must not come back on the next pass.
 pub fn forget_playlist(app: &AppHandle, description: Option<&str>) {
@@ -249,7 +249,7 @@ pub fn forget_playlist(app: &AppHandle, description: Option<&str>) {
     }
 }
 
-fn entry(t: &SavedTrack) -> LocalEntry {
+pub fn entry(t: &SavedTrack) -> LocalEntry {
     LocalEntry {
         provider: Provider::YouTube,
         provider_track_id: t.provider_track_id.clone(),
@@ -284,7 +284,7 @@ async fn apply_playlists(
         let existing = engine
             .local_playlists()
             .iter()
-            .find(|p| p.description.as_deref() == Some(note.as_str()))
+            .find(|p| p.description.as_deref().and_then(|d| split_note(d).1) == Some(note.as_str()))
             .map(|p| p.id.clone());
         let (local_id, created) = match existing {
             Some(id) => (id, false),
@@ -400,7 +400,7 @@ async fn run_mode(app: &AppHandle, mode: Mode) -> Result<ImportReport, LibraryEr
                 "failed"
             },
         );
-        let _ = app.emit_to("main", EVENT, event);
+        let _ = emit_main(app, EVENT, &event);
     }
     result
 }
@@ -413,7 +413,7 @@ async fn run_inner(app: &AppHandle, mode: Mode) -> Result<ImportReport, LibraryE
         .ok_or(LibraryError::Unavailable)?;
     if mode == Mode::Full {
         live_update(app, "running");
-        let _ = app.emit_to("main", EVENT, ImportEvent::Running);
+        let _ = emit_main(app, EVENT, &ImportEvent::Running);
     }
     let known = if mode == Mode::Quick {
         COUNTS
@@ -475,7 +475,7 @@ async fn run_inner(app: &AppHandle, mode: Mode) -> Result<ImportReport, LibraryE
                     memory.liked_ids.union(&incoming).cloned().collect()
                 };
                 if added + removed_n > 0 {
-                    let _ = app.emit_to("main", "core://library/changed", ());
+                    let _ = emit_main(app, "core://library/changed", &());
                 }
             }
             Err(_) => report.failed.push("likes"),
@@ -490,7 +490,7 @@ async fn run_inner(app: &AppHandle, mode: Mode) -> Result<ImportReport, LibraryE
             Ok((n, tracks)) => {
                 report.history_added = n;
                 if n > 0 {
-                    let _ = app.emit_to("main", "core://history/changed", tracks);
+                    let _ = emit_main(app, "core://history/changed", &tracks);
                 }
             }
             Err(_) => report.failed.push("history"),
@@ -563,7 +563,7 @@ pub async fn run_auto(app: &AppHandle, force: bool) {
 mod tests {
     use super::*;
     use crate::core::yt::Yt;
-    use innerlight::{Client, FixtureTransport};
+    use innerlight::{Client, FixtureTransport, Policy};
     use serde_json::json;
     use std::sync::Arc;
 
@@ -572,6 +572,10 @@ mod tests {
         assert_eq!(marker_id(&marker(Origin::Music, "PL123")), Some("PL123"));
         assert_eq!(marker_id(&marker(Origin::YouTube, "WL")), Some("WL"));
         assert_eq!(marker_id("My own playlist"), None);
+        assert_eq!(
+            marker_id("my text\nImported from YouTube Music [PL9]"),
+            Some("PL9")
+        );
         assert_eq!(marker_id("Imported from YouTube Music [PL1"), None);
     }
 
@@ -621,6 +625,8 @@ mod tests {
         );
         let client = Client::builder()
             .transport(transport.clone())
+            // No retry: innerlight's polite gate would re-send a 5xx twice more, and this test counts requests.
+            .policy(Policy::no_retry())
             .build()
             .unwrap();
         client.set_cookie("SAPISID=abc123; SID=x").unwrap();
@@ -647,4 +653,98 @@ mod tests {
             .collect();
         assert_eq!(endpoints, ["like/like", "like/removelike", "like/like"]);
     }
+}
+
+/// Imports a single YouTube / YouTube Music playlist (by URL or id) into the local library.
+/// Public playlists are fetched anonymously; no sign-in is required. Returns the new local playlist id.
+#[tauri::command]
+pub async fn youtube_import_playlist_from_url(
+    app: AppHandle,
+    window: WebviewWindow,
+    engine: State<'_, SyncEngineState>,
+    url: String,
+) -> Result<String, ErrorCategory> {
+    // Only the main window may trigger imports.
+    if window.label() != "main" {
+        return Err(ErrorCategory::Validation);
+    }
+    let id = parse_youtube_playlist_id(&url).ok_or(ErrorCategory::Validation)?;
+
+    let yt = app
+        .state::<crate::commands::youtube::YouTubeState>()
+        .yt
+        .clone()
+        .filter(|_| {
+            app.state::<crate::commands::youtube::YouTubeState>()
+                .connected()
+        })
+        .unwrap_or_else(|| {
+            crate::core::yt::Yt::new(std::time::Duration::from_secs(30)).unwrap_or_else(|_| {
+                crate::core::yt::Yt::from_client(innerlight::Client::builder().build().unwrap())
+            })
+        });
+    let mut videos = Vec::new();
+    let mut cont: Option<String> = None;
+    let mut pages = 0u32;
+    loop {
+        if videos.len() >= 500 || pages >= 20 {
+            break;
+        }
+        let page = yt
+            .youtube()
+            .playlist(&id, cont.as_deref())
+            .await
+            .map_err(|_| ErrorCategory::Offline)?;
+        videos.extend(page.items);
+        cont = page.continuation;
+        pages += 1;
+        if cont.is_none() {
+            break;
+        }
+    }
+    let tracks: Vec<SavedTrack> = videos
+        .into_iter()
+        .filter_map(crate::core::youtube_import::video_track)
+        .collect();
+
+    let mut checkout = engine.checkout().await?;
+    let eng = checkout.engine();
+    let short = &id[..id.len().min(8)];
+    let name = format!("YouTube playlist {short}");
+    let local_id = eng
+        .create_local(&name, None)
+        .map_err(|_| ErrorCategory::Validation)?;
+    for t in &tracks {
+        let _ = eng.add_local_entry(&local_id, entry(t));
+    }
+    let _ = app;
+    Ok(local_id)
+}
+
+fn parse_youtube_playlist_id(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if innerlight::ids::is_playlist_id(trimmed) {
+        return Some(trimmed.to_owned());
+    }
+    // Query string form: ...?list=PL...
+    if let Some(idx) = trimmed.find("list=") {
+        let rest = &trimmed[idx + 5..];
+        let end = rest
+            .find(|c: char| c == '&' || c == '#' || c.is_whitespace())
+            .unwrap_or(rest.len());
+        let candidate = &rest[..end];
+        if innerlight::ids::is_playlist_id(candidate) {
+            return Some(candidate.to_owned());
+        }
+    }
+    // Path segment form: /playlist/PL...
+    if let Ok(url) = url::Url::parse(trimmed) {
+        let segs: Vec<&str> = url.path_segments().map(|s| s.collect()).unwrap_or_default();
+        for seg in segs {
+            if innerlight::ids::is_playlist_id(seg) {
+                return Some(seg.to_owned());
+            }
+        }
+    }
+    None
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChartColumn, CirclePlay, Compass, EllipsisVertical, Library, Search, Settings, Cable, User, CloudSync, type LucideIcon } from "lucide-react";
+import { CirclePlay, Compass, EllipsisVertical, Library, Search, Settings, Cable, User, CloudSync, Sparkles, type LucideIcon } from "lucide-react";
 import { useUi, type View } from "../../lib/store";
 import { cx } from "../ui";
 import { Drawer } from "../Drawer";
@@ -17,7 +17,7 @@ const TABS: Tab[] = [
 
 // Everything the desktop sidebar footer holds, reachable from "More".
 const MORE: Tab[] = [
-  { view: "stats", label: "Stats", Icon: ChartColumn },
+  { view: "replay", label: "Replay", Icon: Sparkles },
   { view: "sync", label: "Sync", Icon: CloudSync },
   { view: "connections", label: "Connections", Icon: Cable },
   { view: "accounts", label: "Account", Icon: User },

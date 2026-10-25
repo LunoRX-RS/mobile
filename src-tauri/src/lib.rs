@@ -9,6 +9,7 @@ use sync::credentials::KeyringTokenStore;
 use sync::engine::{ErrorCategory, SyncEngine};
 use sync::settings::default_base_url;
 use tauri::{Emitter, Manager};
+use tauri_plugin_deep_link::DeepLinkExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -27,6 +28,7 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_lunor_native::init());
     builder
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
             #[cfg(target_os = "android")]
             {
@@ -117,8 +119,17 @@ pub fn run() {
                 eprintln!("sync engine unavailable: {kind:?}");
             }
             app.manage(commands::sync::SyncEngineState::new(engine));
+            commands::sync::start_auto_sync(app.handle().clone());
             app.manage(commands::remote::RemoteState::default());
+            app.manage(commands::share::PendingShare::default());
             commands::likes::start(app.handle());
+            // Links that opened the app, and links while it runs (on Android and iOS the plugin forwards them here).
+            let handle = app.handle().clone();
+            app.deep_link()
+                .on_open_url(move |event| commands::share::accept_urls(&handle, &event.urls()));
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                commands::share::accept_urls(app.handle(), &urls);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -144,9 +155,13 @@ pub fn run() {
             commands::youtube::youtube_connect_finish,
             commands::youtube::youtube_connection_status,
             commands::youtube::youtube_import,
+            commands::youtube_import::youtube_import_playlist_from_url,
             commands::youtube::youtube_disconnect,
             commands::youtube::youtube_like_push_get,
             commands::youtube::youtube_like_push_set,
+            commands::share::shared_link_take,
+            commands::share::shared_token_from_url,
+            commands::share::shared_playlist_get,
             commands::sync::sync_sign_in,
             commands::sync::sync_sign_out,
             commands::sync::sync_discard_pending,
@@ -155,6 +170,8 @@ pub fn run() {
             commands::sync::sync_add_local_entry,
             commands::sync::sync_upload_playlist,
             commands::sync::sync_list_local_playlists,
+            commands::sync::sync_check_playlists,
+            commands::sync::sync_set_playlist_description,
             commands::sync::sync_playlist_entries,
             commands::sync::sync_delete_local_playlist,
             commands::sync::sync_rename_local_playlist,
@@ -204,6 +221,8 @@ pub fn run() {
             commands::offline::offline_cancel,
             commands::offline::offline_remove,
             commands::offline::offline_set_limit,
+            commands::offline::offline_usage,
+            commands::offline::offline_clear_transient,
             commands::lrc::lrc_load,
             commands::lrc::lrc_save,
             commands::lrc::lrc_delete,
