@@ -1,5 +1,6 @@
 #if os(iOS)
 import ActivityKit
+import MediaPlayer
 import UIKit
 
 /// Mirrors core's now-playing facts into one Live Activity per listening session. Core stays the only source of
@@ -19,6 +20,10 @@ final class LunorLiveActivityManager {
   private var requesting = false
   private var artworkUrl: String?
   private var artwork: Data?
+
+  /// True while a Live Activity presents the session, so the plugin suppresses the system Now Playing card and the
+  /// lock screen shows one card instead of two.
+  private(set) var ownsPresentation = false
 
   /// Called on every `nowPlaying` push (~4 Hz). Updates only when something the island shows actually changed, because
   /// ActivityKit budgets updates and the progress bar advances by itself from `updatedAt`.
@@ -83,6 +88,7 @@ final class LunorLiveActivityManager {
     sentPositionMs = nil
     sentPlaying = false
     lastSend = .distantPast
+    ownsPresentation = false
     guard let running else { return }
     Task { await running.end(nil, dismissalPolicy: .immediate) }
   }
@@ -96,10 +102,18 @@ final class LunorLiveActivityManager {
     sentPositionMs = existing.content.state.positionMs
     sentAt = existing.content.state.updatedAt
     sentPlaying = existing.content.state.isPlaying
+    takePresentationOwnership()
     // Leftovers from earlier runs (or a request that raced past the guard) stack up as extra islands; keep one.
     for extra in active.dropFirst() {
       Task { await extra.end(nil, dismissalPolicy: .immediate) }
     }
+  }
+
+  /// One lock-screen card: while our Live Activity is up, the system Now Playing card is cleared. Remote commands stay
+  /// registered, so AirPods and Control Center buttons keep working through the same `remote` path.
+  private func takePresentationOwnership() {
+    ownsPresentation = true
+    MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
   }
 
   private func send(_ state: LunorActivityAttributes.ContentState) {
@@ -123,12 +137,15 @@ final class LunorLiveActivityManager {
         let requested = try Activity.request(attributes: LunorActivityAttributes(), content: content, pushType: nil)
         // `stop` cleared `last` while the request was in flight: the session is over, do not resurrect it.
         if last == nil {
+          ownsPresentation = false
           await requested.end(nil, dismissalPolicy: .immediate)
         } else {
           activity = requested
+          takePresentationOwnership()
         }
       } catch {
         NSLog("[live activity] request failed: %@", error.localizedDescription)
+        ownsPresentation = false
         retryAfter = Date().addingTimeInterval(30)
       }
     }

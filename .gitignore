@@ -38,3 +38,4 @@ src-tauri/.cargo/
 plugins/lunor-native/android/build/
 plugins/lunor-native/android/.tauri/
 plugins/lunor-native/android/.gradle/
+.qoder/

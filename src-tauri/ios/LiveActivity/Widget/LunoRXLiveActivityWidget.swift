@@ -28,17 +28,17 @@ struct LunoRXLiveActivityWidget: Widget {
     } dynamicIsland: { context in
       DynamicIsland {
         DynamicIslandExpandedRegion(.leading) {
-          Artwork(state: context.state, side: 52, radius: 10)
+          Artwork(state: context.state, side: 64, radius: 12)
             .padding(.leading, 4)
         }
         DynamicIslandExpandedRegion(.center) {
           VStack(alignment: .leading, spacing: 2) {
             Text(context.state.title)
-              .font(.system(size: 15, weight: .semibold))
+              .font(.system(size: 17, weight: .semibold))
               .foregroundStyle(LunorPalette.primary)
               .lineLimit(1)
             Text(context.state.artist)
-              .font(.system(size: 12))
+              .font(.system(size: 13))
               .foregroundStyle(LunorPalette.secondary)
               .lineLimit(1)
           }
@@ -56,12 +56,12 @@ struct LunoRXLiveActivityWidget: Widget {
           .padding(.horizontal, 4)
         }
       } compactLeading: {
-        Artwork(state: context.state, side: 22, radius: 6)
+        Artwork(state: context.state, side: 26, radius: 7)
       } compactTrailing: {
         Indicator(playing: context.state.isPlaying, compact: true)
       } minimal: {
         Image(systemName: "waveform")
-          .font(.system(size: 15, weight: .semibold))
+          .font(.system(size: 16, weight: .semibold))
           .foregroundStyle(LunorPalette.lavender)
       }
       .keylineTint(LunorPalette.lavender)
