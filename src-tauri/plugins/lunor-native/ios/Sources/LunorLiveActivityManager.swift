@@ -89,14 +89,17 @@ final class LunorLiveActivityManager {
 
   private func adoptIfNeeded() {
     guard activity == nil else { return }
-    guard let existing = Activity<LunorActivityAttributes>.activities.first(where: { $0.activityState == .active }) else {
-      return
-    }
+    let active = Activity<LunorActivityAttributes>.activities.filter { $0.activityState == .active }
+    guard let existing = active.first else { return }
     activity = existing
     last = existing.content.state
     sentPositionMs = existing.content.state.positionMs
     sentAt = existing.content.state.updatedAt
     sentPlaying = existing.content.state.isPlaying
+    // Leftovers from earlier runs (or a request that raced past the guard) stack up as extra islands; keep one.
+    for extra in active.dropFirst() {
+      Task { await extra.end(nil, dismissalPolicy: .immediate) }
+    }
   }
 
   private func send(_ state: LunorActivityAttributes.ContentState) {
