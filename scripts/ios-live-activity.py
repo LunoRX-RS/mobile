@@ -14,10 +14,11 @@ Usage:
 
 The patch is idempotent: marked blocks are removed and re-inserted, so running it after every `tauri ios init` (or on an
 already patched file) gives the same result. Signing: with APPLE_DEVELOPMENT_TEAM set, both the app and the extension
-switch to automatic signing with that team; otherwise both get an ad-hoc "Sign to Run Locally" identity. The ad-hoc
-codesign step is required, not optional: a build left to the linker's automatic signature (`flags=…linker-signed`) is
-refused by securityd for Keychain access, which surfaces in-app as the "OS key store is unavailable or locked" error and
-blocks Google sign-in.
+switch to automatic signing with that team; without it, LOCAL_SIGN (ad-hoc "Sign to Run Locally") is applied only when
+project.yml carries no team — an env-less run keeps a team written by an earlier device build, so alternating
+simulator/device builds never strip the device provisioning. The ad-hoc codesign step is required, not optional: a build
+left to the linker's automatic signature (`flags=…linker-signed`) is refused by securityd for Keychain access, which
+surfaces in-app as the "OS key store is unavailable or locked" error and blocks Google sign-in.
 """
 
 import json
@@ -103,11 +104,9 @@ def patch_signing(text, team):
             raise SystemExit("ios-live-activity: signing block in project.yml not recognised")
         return text[: current.start()] + signing_block(team) + text[current.end() :]
     current = AUTOMATIC.search(text)
-    if current:
-        return text[: current.start()] + LOCAL_SIGN + text[current.end() :]
-    if LOCAL_SIGN in text:
-        return text
-    raise SystemExit("ios-live-activity: signing block in project.yml not recognised")
+    if not current:
+        raise SystemExit("ios-live-activity: signing block in project.yml not recognised")
+    return text[: current.start()] + signing_block(team) + text[current.end() :]
 
 
 def extension_target(team):
@@ -253,8 +252,14 @@ def main(argv):
         )
         return 2
 
-    team = os.environ.get("APPLE_DEVELOPMENT_TEAM", "").strip()
+    env_team = os.environ.get("APPLE_DEVELOPMENT_TEAM", "").strip()
     original = SPEC.read_text()
+    # An env-less run keeps the team already written by a device build: simulator builds then get a real codesign pass,
+    # and the next device build keeps its provisioning instead of finding the ad-hoc block stripped back in.
+    team = env_team
+    if not team:
+        existing = re.search(r"^        DEVELOPMENT_TEAM: (\S+)$", original, re.M)
+        team = existing.group(1) if existing else ""
     updated = patched(original, team)
 
     verify_plist()
@@ -278,7 +283,7 @@ def main(argv):
 
     if failures:
         return 1
-    print("ios-live-activity: ok" + (" (new-session build)" if team else ""))
+    print("ios-live-activity: ok" + (" (new-session build)" if env_team else ""))
     return 0
 
 
