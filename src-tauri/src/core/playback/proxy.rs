@@ -29,7 +29,8 @@ impl AudioProxy {
         let port = listener.local_addr().map_err(|_| failed())?.port();
         let path = format!("/{:032x}", rand::random::<u128>());
         let url = format!("http://127.0.0.1:{port}{path}");
-        let client = reqwest::Client::builder()
+        let signed = reqwest::Url::parse(&audio.url).map_err(|_| failed())?;
+        let client = super::extract::bind_to_signed_family(reqwest::Client::builder(), &signed)
             .connect_timeout(Duration::from_secs(8))
             .timeout(Duration::from_secs(30))
             .redirect(reqwest::redirect::Policy::custom(|attempt| {
