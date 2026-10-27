@@ -69,9 +69,11 @@ export default function MobileTabBar() {
                   type="button"
                   aria-current={active ? "page" : undefined}
                   onClick={() => navigate(v)}
-                  className={cx("flex h-[52px] w-full flex-col items-center justify-center gap-0.5 text-[10px] leading-3 font-medium", active ? "text-lumen-lavender" : "text-secondary-text")}
+                  className={cx("flex h-14 w-full flex-col items-center justify-center gap-1 text-[11px] leading-4 font-medium transition-colors duration-150 motion-reduce:transition-none", active ? "text-primary-text" : "text-secondary-text")}
                 >
-                  <Icon size={22} aria-hidden="true" />
+                  <span className={cx("flex h-7 w-14 items-center justify-center rounded-full transition-colors duration-150 motion-reduce:transition-none", active && "bg-lumen-wash text-lumen-lavender")}>
+                    <Icon size={22} aria-hidden="true" />
+                  </span>
                   {label}
                 </button>
               </li>
@@ -84,9 +86,11 @@ export default function MobileTabBar() {
               aria-haspopup="dialog"
               aria-current={inMore ? "page" : undefined}
               onClick={() => setMore(true)}
-              className={cx("flex h-[52px] w-full flex-col items-center justify-center gap-0.5 text-[10px] leading-3 font-medium", inMore ? "text-lumen-lavender" : "text-secondary-text")}
+              className={cx("flex h-14 w-full flex-col items-center justify-center gap-1 text-[11px] leading-4 font-medium transition-colors duration-150 motion-reduce:transition-none", inMore ? "text-primary-text" : "text-secondary-text")}
             >
-              <EllipsisVertical size={22} aria-hidden="true" />
+              <span className={cx("flex h-7 w-14 items-center justify-center rounded-full transition-colors duration-150 motion-reduce:transition-none", inMore && "bg-lumen-wash text-lumen-lavender")}>
+                <EllipsisVertical size={22} aria-hidden="true" />
+              </span>
               More
             </button>
           </li>
