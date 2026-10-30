@@ -2,7 +2,11 @@ package io.lunorx.nativeplugin
 
 import android.app.Activity
 import android.net.Uri
+import android.content.Context
 import android.os.Handler
+import android.os.PowerManager
+import android.util.Log
+import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -18,6 +22,17 @@ import app.tauri.plugin.JSObject
  * bridge: the page reports its state through its title and takes commands as plain script calls, so remote content
  * never reaches native code. Every method runs on the main thread. Only the page's own reports settle playback state.
  */
+/**
+ * A web view that always tells the page it is on screen. When the app goes to the background the window stops being
+ * visible and the page's player is paused (and its timers throttled) on the strength of that alone; this view only ever
+ * plays audio, so it keeps saying "visible".
+ */
+private class PageWebView(context: Context) : WebView(context) {
+    override fun onWindowVisibilityChanged(visibility: Int) = super.onWindowVisibilityChanged(View.VISIBLE)
+
+    override fun onVisibilityChanged(changedView: View, visibility: Int) = super.onVisibilityChanged(changedView, View.VISIBLE)
+}
+
 class PagePlayer(private val activity: Activity, private val main: Handler) {
     private var web: WebView? = null
     private var expected = ""
@@ -33,6 +48,22 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
     // The media session shows this while the page holds the track; see [PageMirror].
     private val mirror = PageMirror()
     private var shown = false
+
+    // Keeps the CPU awake while the page plays with the screen off; released on pause, end, error and destroy.
+    private var lock: PowerManager.WakeLock? = null
+
+    private fun holdAwake(on: Boolean) {
+        if (on && lock?.isHeld != true) {
+            val power = activity.getSystemService(Context.POWER_SERVICE) as PowerManager
+            lock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "lunorx:page").apply {
+                setReferenceCounted(false)
+                acquire(WAKE_LIMIT_MS)
+            }
+        } else if (!on) {
+            lock?.takeIf { it.isHeld }?.release()
+            lock = null
+        }
+    }
 
     val active: Boolean get() = web != null
 
@@ -53,7 +84,7 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
         positionMs = 0
         durationMs = 0
         pending = invoke
-        val view = WebView(activity)
+        val view = PageWebView(activity)
         with(view.settings) {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -102,6 +133,7 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
         if (!wanted && state == "playing") call("pause()")
         positionMs = position
         durationMs = duration
+        if (state == "ended" || state == "error") holdAwake(false)
         if (shown) refresh()
         if (loading) {
             // Loaded: hold it paused, as core expects, then let reports through.
@@ -121,12 +153,14 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
 
     fun play() {
         wanted = true
+        holdAwake(true)
         call("play()")
         refresh()
     }
 
     fun pause() {
         wanted = false
+        holdAwake(false)
         call("pause()")
         refresh()
     }
@@ -150,6 +184,7 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
     }
 
     fun destroy() {
+        holdAwake(false)
         deadline?.let(main::removeCallbacks)
         deadline = null
         pending?.reject("stopped")
@@ -171,6 +206,7 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
     private companion object {
         const val PREFIX = "LUNORX_ST|"
         const val LOAD_TIMEOUT_MS = 25_000L
+        const val WAKE_LIMIT_MS = 6 * 60 * 60 * 1000L
         val STATES = setOf("playing", "paused", "waiting", "ended", "error")
 
         // Runs inside the page. Reports what the page's own player does and carries out play, pause, seek and volume.
@@ -194,6 +230,15 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
               // The page's ads (user decision 2026-10-31, see AGENTS.md): muted, sped up, skipped where the page lets
               // them be, and never reported as the track. `lastAd` keeps the end of an ad from reading as the end of
               // the episode.
+              // Why the page's player stopped, for the device log (console messages reach logcat).
+              let watched = null;
+              const watch = (m) => {
+                if (watched === m) return;
+                watched = m;
+                for (const type of ["pause", "ended", "error"]) {
+                  m.addEventListener(type, () => console.log("LUNORX video " + type + " visibility=" + document.visibilityState + " want=" + want + " ad=" + adShowing() + " t=" + Math.round(m.currentTime)));
+                }
+              };
               let lastAd = 0;
               let lastPos = 0;
               let lastDur = 0;
@@ -226,6 +271,7 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
               setInterval(() => {
                 const m = media();
                 if (!m || !id()) return;
+                watch(m);
                 if (adShowing()) {
                   lastAd = Date.now();
                   skipAd(m);
