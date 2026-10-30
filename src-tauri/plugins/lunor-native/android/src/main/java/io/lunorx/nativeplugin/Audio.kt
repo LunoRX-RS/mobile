@@ -7,7 +7,9 @@ import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 
 /** One ExoPlayer for the process. Core drives it through [LunorNativePlugin]; the system UI only queues [remote] events. */
@@ -29,6 +31,12 @@ object Audio {
 
     fun player(context: Context): ExoPlayer =
         exo ?: ExoPlayer.Builder(context.applicationContext)
+            // Files are read from disk; everything else comes from the loopback proxy (see [LoopbackDataSource]).
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(
+                    DefaultDataSource.Factory(context.applicationContext, LoopbackDataSource.Factory()),
+                ),
+            )
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
