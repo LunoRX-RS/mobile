@@ -26,15 +26,15 @@ import AccountsScreen from "../../features/accounts/AccountsScreen";
 import { LoginGate } from "../../features/accounts/LoginGate";
 import LoginPage from "../../features/accounts/LoginPage";
 import SettingsScreen from "../../features/settings/SettingsScreen";
-import StatsScreen from "../../features/stats/StatsScreen";
 import ReplayScreen from "../../features/replay/ReplayScreen";
 import PodcastsScreen from "../../features/podcasts/PodcastsScreen";
 import SharedScreen from "../../features/shared/SharedScreen";
-import { SHARE_OPEN_EVENT, sharedLinkTake } from "../../services/tauri/share";
 import SyncPanel from "../../features/sync/SyncPanel";
+import { SHARE_OPEN_EVENT, sharedLinkTake } from "../../services/tauri/share";
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
 import PlayerBar from "./PlayerBar";
+import { NoticeBar } from "./NoticeBar";
 import NowPlaying from "./NowPlaying";
 import CommandPalette from "./CommandPalette";
 import QueueScreen from "../../features/queue/QueueScreen";
@@ -125,21 +125,6 @@ export default function AppShell() {
   const phone = layout === "phone";
   const [mounted, setMounted] = useState(false);
   useEffect(() => { void loadCustomFonts(); }, []);
-  const openShared = useUi((s) => s.openShared);
-  // Share links open the shared-playlist view: live events, plus a link that arrived before this window listened.
-  useEffect(() => {
-    let active = true;
-    let unlisten: UnlistenFn | undefined;
-    void listen<string>(SHARE_OPEN_EVENT, (event) => openShared(event.payload)).then((fn) => {
-      if (active) unlisten = fn;
-      else fn();
-    });
-    void sharedLinkTake().then((token) => { if (token && active) openShared(token); }).catch(() => {});
-    return () => {
-      active = false;
-      unlisten?.();
-    };
-  }, [openShared]);
   useEffect(() => {
     setMounted(true);
     hydrateRecentSearches();
@@ -165,6 +150,21 @@ export default function AppShell() {
   const nativeQueue = usePlayback((p) => p.requested !== null || p.track !== null || p.resume !== null);
   const navigate = useUi((s) => s.navigate);
   const setSelectedPlaylist = useUi((s) => s.setSelectedPlaylist);
+  const openShared = useUi((s) => s.openShared);
+  // Share links open the shared-playlist view: live events, plus a link that arrived before this window listened.
+  useEffect(() => {
+    let active = true;
+    let unlisten: UnlistenFn | undefined;
+    void listen<string>(SHARE_OPEN_EVENT, (event) => openShared(event.payload)).then((fn) => {
+      if (active) unlisten = fn;
+      else fn();
+    }).catch(() => {});
+    void sharedLinkTake().then((token) => { if (token && active) openShared(token); }).catch(() => {});
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, [openShared]);
   useGlobalKeys();
   useEffect(() => initHistory(), []);
   useEffect(() => initTelemetry(), []);
@@ -231,7 +231,6 @@ export default function AppShell() {
                     {view === "accounts" && <AccountsScreen />}
                     {view === "login" && <LoginPage />}
                     {view === "settings" && <SettingsScreen />}
-                    {view === "stats" && <StatsScreen />}
                     {view === "replay" && <ReplayScreen />}
                     {view === "podcasts" && <PodcastsScreen />}
                     {view === "shared" && <SharedScreen />}
@@ -267,6 +266,7 @@ export default function AppShell() {
       <NowPlaying />
       <CommandPalette />
       <ContextMenuHost />
+      <NoticeBar />
       <LoginGate />
     </MotionConfig>
   );

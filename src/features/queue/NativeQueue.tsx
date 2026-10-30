@@ -8,6 +8,7 @@ import { useUi } from "../../lib/store";
 import { TrackCover } from "../../components/TrackCover";
 import { LikeButton } from "../../components/LibraryActions";
 import { formatDuration } from "../../lib/media";
+import { attempt } from "../../lib/notice";
 import { Button, EmptyState, IconButton } from "../../components/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { addToPlaylist } from "../../lib/playlistActions";
@@ -44,7 +45,7 @@ function QueueRow({ item, index, busy, status, onDrop }: { item: Upcoming; index
         {index === 0 && status && <p role="status" className="text-[11px] text-secondary-text">{status}</p>}
       </button>
       <div className="flex items-center gap-0.5">
-        <IconButton label={`Remove ${item.title} from the queue`} onClick={() => void playerQueueEdit({ op: "remove", id: item.id }).catch(() => {})} className="size-9"><X size={16} /></IconButton>
+        <IconButton label={`Remove ${item.title} from the queue`} onClick={() => attempt(playerQueueEdit({ op: "remove", id: item.id }), "Could not remove the song from the queue.")} className="size-9"><X size={16} /></IconButton>
         <LikeButton track={hit} />
       </div>
     </Reorder.Item>

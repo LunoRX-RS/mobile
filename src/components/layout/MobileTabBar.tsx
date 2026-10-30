@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChartColumn, Sparkles, CirclePlay, Compass, EllipsisVertical, Library, Mic, Search, Settings, Cable, User, CloudSync, type LucideIcon } from "lucide-react";
+import { CirclePlay, Compass, EllipsisVertical, Library, Mic, Search, Settings, Cable, User, CloudSync, Sparkles, type LucideIcon } from "lucide-react";
 import { useUi, type View } from "../../lib/store";
 import { cx } from "../ui";
 import { Drawer } from "../Drawer";
@@ -18,8 +18,7 @@ const TABS: Tab[] = [
 // Everything the desktop sidebar footer holds, reachable from "More".
 const MORE: Tab[] = [
   { view: "podcasts", label: "Podcasts", Icon: Mic },
-  { view: "stats", label: "Stats", Icon: ChartColumn },
-  { view: "replay", label: "Unified Replay", Icon: Sparkles },
+  { view: "replay", label: "Replay", Icon: Sparkles },
   { view: "sync", label: "Sync", Icon: CloudSync },
   { view: "connections", label: "Connections", Icon: Cable },
   { view: "accounts", label: "Account", Icon: User },
@@ -71,9 +70,11 @@ export default function MobileTabBar() {
                   type="button"
                   aria-current={active ? "page" : undefined}
                   onClick={() => navigate(v)}
-                  className={cx("flex h-[52px] w-full flex-col items-center justify-center gap-0.5 text-[10px] leading-3 font-medium", active ? "text-lumen-lavender" : "text-secondary-text")}
+                  className={cx("flex h-14 w-full flex-col items-center justify-center gap-1 text-[11px] leading-4 font-medium transition-colors duration-150 motion-reduce:transition-none", active ? "text-primary-text" : "text-secondary-text")}
                 >
-                  <Icon size={22} aria-hidden="true" />
+                  <span className={cx("flex h-7 w-14 items-center justify-center rounded-full transition-colors duration-150 motion-reduce:transition-none", active && "bg-lumen-wash text-lumen-lavender")}>
+                    <Icon size={22} aria-hidden="true" />
+                  </span>
                   {label}
                 </button>
               </li>
@@ -86,9 +87,11 @@ export default function MobileTabBar() {
               aria-haspopup="dialog"
               aria-current={inMore ? "page" : undefined}
               onClick={() => setMore(true)}
-              className={cx("flex h-[52px] w-full flex-col items-center justify-center gap-0.5 text-[10px] leading-3 font-medium", inMore ? "text-lumen-lavender" : "text-secondary-text")}
+              className={cx("flex h-14 w-full flex-col items-center justify-center gap-1 text-[11px] leading-4 font-medium transition-colors duration-150 motion-reduce:transition-none", inMore ? "text-primary-text" : "text-secondary-text")}
             >
-              <EllipsisVertical size={22} aria-hidden="true" />
+              <span className={cx("flex h-7 w-14 items-center justify-center rounded-full transition-colors duration-150 motion-reduce:transition-none", inMore && "bg-lumen-wash text-lumen-lavender")}>
+                <EllipsisVertical size={22} aria-hidden="true" />
+              </span>
               More
             </button>
           </li>

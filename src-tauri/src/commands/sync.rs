@@ -6,6 +6,7 @@ use std::sync::{Mutex as StdMutex, PoisonError};
 use tauri::{AppHandle, Manager, State};
 use tokio::sync::{Mutex as TokioMutex, MutexGuard as TokioMutexGuard};
 
+use crate::commands::emit::emit_main;
 use crate::sync::api::Provider;
 use crate::sync::conflict::Resolution;
 use crate::sync::engine::{self, ErrorCategory, Host, SyncEngine, SyncState};
@@ -146,6 +147,8 @@ pub struct LocalPlaylistDto {
     pub queued_writes: usize,
     /// Entries past the server-held and queued ones: the unsent partial-upload tail.
     pub unsent_entries: usize,
+    /// The note under the title, without the import marker (a line only the importer reads).
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -281,21 +284,23 @@ pub async fn run_playlist_entries(
         .collect())
 }
 
-/// Deletes a local playlist that is not on the server. A playlist imported from YouTube Music is remembered as
-/// deleted so the next import does not bring it back.
+/// Deletes a playlist (on the server first when it is uploaded). A playlist imported from YouTube Music is remembered
+/// as deleted so the next import does not bring it back.
 pub async fn run_delete_local_playlist(
     app: &tauri::AppHandle,
     state: &SyncEngineState,
     local_id: &str,
 ) -> Result<(), ErrorCategory> {
-    let mut co = state.checkout().await?;
-    let engine = co.engine();
-    let description = engine
-        .local_playlists()
-        .iter()
-        .find(|p| p.id == local_id)
-        .and_then(|p| p.description.clone());
-    engine.delete_local(local_id)?;
+    let _net = state.net.lock().await;
+    let description = {
+        let mut co = state.checkout().await?;
+        co.engine()
+            .local_playlists()
+            .iter()
+            .find(|p| p.id == local_id)
+            .and_then(|p| p.description.clone())
+    };
+    engine::delete_playlist(&mut Host::Shared(state), local_id).await?;
     crate::commands::youtube_import::forget_playlist(app, description.as_deref());
     Ok(())
 }
@@ -307,6 +312,17 @@ pub async fn run_rename_local_playlist(
 ) -> Result<(), ErrorCategory> {
     let mut co = state.checkout().await?;
     co.engine().rename_local(local_id, name)
+}
+
+/// Sets or clears a playlist's description text. Works for a playlist that is only on this device and, online, for an
+/// uploaded one (the server changes first).
+pub async fn run_set_playlist_description(
+    state: &SyncEngineState,
+    local_id: &str,
+    description: Option<&str>,
+) -> Result<(), ErrorCategory> {
+    let _net = state.net.lock().await;
+    engine::set_description(&mut Host::Shared(state), local_id, description).await
 }
 
 pub async fn run_move_local_entry(
@@ -344,6 +360,8 @@ pub struct ShareDto {
     pub id: String,
     pub created_at: String,
     pub active: bool,
+    /// The link to the playlist while it is live. Contains the token: show it, never log it.
+    pub url: Option<String>,
 }
 
 pub async fn run_share_playlist(
@@ -358,6 +376,25 @@ pub async fn run_share_playlist(
     })
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteStateDto {
+    pub local_id: String,
+    pub state: engine::RemoteState,
+}
+
+/// Compares local playlists with the server's. Read-only; uploading stays a user action.
+pub async fn run_check_playlists(
+    state: &SyncEngineState,
+) -> Result<Vec<RemoteStateDto>, ErrorCategory> {
+    let _net = state.net.lock().await;
+    let states = engine::check_remote(&mut Host::Shared(state)).await?;
+    Ok(states
+        .into_iter()
+        .map(|(local_id, state)| RemoteStateDto { local_id, state })
+        .collect())
+}
+
 pub async fn run_list_shares(
     state: &SyncEngineState,
     local_id: &str,
@@ -366,10 +403,11 @@ pub async fn run_list_shares(
     let shares = engine::list_shares(&mut Host::Shared(state), local_id).await?;
     Ok(shares
         .into_iter()
-        .map(|(id, created_at, active)| ShareDto {
+        .map(|(id, created_at, active, url)| ShareDto {
             id,
             created_at,
             active,
+            url,
         })
         .collect())
 }
@@ -386,6 +424,30 @@ pub async fn run_revoke_share(
 pub async fn run_flush_pending(state: &SyncEngineState) -> Result<usize, ErrorCategory> {
     let _net = state.net.lock().await;
     engine::flush_pending(&mut Host::Shared(state)).await
+}
+
+/// How often the signed-in device sends queued writes and pulls the server state.
+const AUTO_SYNC_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Background cloud sync. While signed in it sends queued playlist writes and pulls the server state every minute.
+/// Signed out it does nothing. Failures stay in the sync status (offline, rate limited, conflict); nothing pops up.
+pub fn start_auto_sync(app: tauri::AppHandle) {
+    use tauri::Manager;
+    tauri::async_runtime::spawn(async move {
+        let mut tick = tokio::time::interval(AUTO_SYNC_EVERY);
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tick.tick().await;
+            let state = app.state::<SyncEngineState>();
+            let before = run_status(&state).await;
+            if before.state == SyncState::SignedOut {
+                continue;
+            }
+            let _ = run_flush_pending(&state).await;
+            let after = run_status(&state).await;
+            let _ = emit_main(&app, "core://sync/auto", &after);
+        }
+    });
 }
 
 pub async fn run_list_local_playlists(
@@ -407,6 +469,11 @@ pub async fn run_list_local_playlists(
                 .as_deref()
                 .map_or(0, |r| engine.queued_writes(r)),
             unsent_entries: p.entries.len() - p.uploaded - p.queued,
+            description: p
+                .description
+                .as_deref()
+                .map(|d| crate::sync::local_store::split_note(d).0.to_string())
+                .filter(|t| !t.is_empty()),
         })
         .collect())
 }
@@ -567,6 +634,13 @@ pub async fn sync_list_local_playlists(
 }
 
 #[tauri::command]
+pub async fn sync_check_playlists(
+    state: State<'_, SyncEngineState>,
+) -> Result<Vec<RemoteStateDto>, ErrorCategory> {
+    run_check_playlists(&state).await
+}
+
+#[tauri::command]
 pub async fn sync_playlist_entries(
     state: State<'_, SyncEngineState>,
     local_id: String,
@@ -581,6 +655,15 @@ pub async fn sync_delete_local_playlist(
     local_id: String,
 ) -> Result<(), ErrorCategory> {
     run_delete_local_playlist(&app, &state, &local_id).await
+}
+
+#[tauri::command]
+pub async fn sync_set_playlist_description(
+    state: State<'_, SyncEngineState>,
+    local_id: String,
+    description: Option<String>,
+) -> Result<(), ErrorCategory> {
+    run_set_playlist_description(&state, &local_id, description.as_deref()).await
 }
 
 #[tauri::command]

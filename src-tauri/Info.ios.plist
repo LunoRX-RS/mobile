@@ -7,6 +7,20 @@
 	<array>
 		<string>audio</string>
 	</array>
+	<!-- Share links: lunorx://share/{token} opens the app (see commands/share.rs). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>io.lunorx.mobile.share</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>lunorx</string>
+			</array>
+		</dict>
+	</array>
 	<!-- Audio is handed to AVPlayer as a file URL, or as http://127.0.0.1 when the disk cache is off. -->
 	<key>NSAppTransportSecurity</key>
 	<dict>

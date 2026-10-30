@@ -13,15 +13,19 @@ This folder is the desktop app reshaped for phones and tablets. It shares the Ru
 | Navigation | Sidebar + top bar | `< 700 px`: bottom tab bar + mini player. `700-1099 px` (iPad portrait): icon rail. `>= 1100 px` (iPad landscape): full sidebar. See `src/lib/layout.ts` |
 The core still owns playback state. A track is `PLAYING` only after the platform player confirms it. Lock-screen and headphone presses are queued by the plugin as `remote` events and sent back through the same core path as the in-app buttons (`platform/control.rs`).
 
-### Feature gap vs desktop (verified against `../desktop` on 2026-10-25)
+### Feature gap vs desktop (verified against `../desktop` on 2026-10-25, after the parity pass)
 
-The old one-line "Not present" claim understated the gap. Three honest categories:
+Three honest categories:
 
-**Not implemented here at all.** Backend: error reports and the activity log (`commands/reports.rs`, `core/errorlog`, `core/activity`), `sync_check_playlists`, `sync_set_playlist_description`, auto-sync (`sync::start_auto_sync`), offline usage / clear-transient, `discord_preview`, taste search (`core/playback/taste`), search cache and ranking (`core/search/{cache,rank}`). UI: Shared screen, SyncAllButton, TrackRail, UpdateBanner / ErrorReportBanner / NoticeBar, Activity / Reports settings, the 11-zone settings IA.
+**Not implemented here at all.** Backend: error reports and the activity log (`commands/reports.rs`, `core/errorlog`, `core/activity`), `discord_preview`, taste search (`core/playback/taste`), search cache and ranking (`core/search/{cache,rank}`). UI: TrackRail, the desktop QueuePanel (mobile uses the queue drawer over `NativeQueue`/`QueueScreen`), UpdateBanner / ErrorReportBanner (the updater is store-forbidden here anyway), Activity / Reports settings, the 11-zone settings IA (mobile keeps its own six categories with the storage rows inside the cache section).
+
+**Added in the 2026-10-25 parity pass** (ported from `../desktop`): share links end to end — deep-link plugin + `commands/share` + `core/share_link` + `core/secrets` registry, the Shared screen, `lunorx://share/{token}` and `play.lunorx.xyz/s|/embed|/og/{token}` opening the app, paste-a-token fallback; `start_auto_sync` (60 s flush while signed in); `sync_check_playlists` remote-state labels and `sync_set_playlist_description` editor; `youtube_import_playlist_from_url` plus the editor's Import-from-link form; `offline_usage` / `offline_clear_transient` with the meter, Clear-cached and kept-offline list in Settings → Playback cache; Replay screen, LinkPlay (pasted YouTube links play), NoticeBar + `notify`/`attempt` on silent failures, SyncAllButton, share links shown again per playlist. Mobile drops the desktop Stats screen on purpose (2026-10-25 user decision): Replay is the only listening-stats screen here, in the phone More sheet and the tablet sidebar; the `stats_*` commands stay registered for Replay and Sync-all.
 
 **Impossible on a phone — stays desktop-only.** Tray icon, app menu, MPRIS, libmpv audio-device picking, the self-updater (`tauri-plugin-updater`; app stores forbid self-update), single-instance, keyboard shortcuts, and Discord presence over the local IPC socket (no Discord app on iOS/Android).
 
 **Present but gated off phones, not deleted.** Discord settings (commands still compiled and registered), app zoom (`setZoom` + capability remain), system / imported fonts (`platform_families()` returns empty on mobile) — all hidden via `DESKTOP_ONLY_GROUPS` / `DESKTOP_ONLY_CATEGORIES` in `src/lib/layout.ts`. `Make lyrics file` is hidden only on phones; it works on tablet widths.
+
+**Share deep links — re-apply after regenerating `gen/`.** The iOS `lunorx` URL scheme needs no manual step on device builds: `bundle.iOS.infoPlist: "Info.ios.plist"` in `tauri.conf.json` merges `src-tauri/Info.ios.plist` (background audio, ATS, `CFBundleURLTypes`) into the generated Info.plist — edits made by hand to `gen/apple/lunorx_iOS/Info.plist` are overwritten. The merge applies to device archives only: a `--target aarch64-sim` product ships **without** those keys, so `simctl openurl lunorx://…` fails (LSApplicationWorkspace error 115) and background audio / local-ATS are missing in the simulator. `scripts/ios-build.sh` now re-inserts the three keys into the sim .app and re-signs ad-hoc after the build. `src-tauri/gen/` is otherwise gitignored: after `tauri android init` re-add the two `MainActivity` intent-filters (`lunorx://share`, and `autoVerify` https for `play.lunorx.xyz` with `/s/ /embed/ /og/` prefixes) to `gen/android/app/src/main/AndroidManifest.xml` — the file's comment carries the snippet. The `plugins.deep-link.mobile` block (hosts for `play.lunorx.xyz`) is deliberately **not** in `tauri.conf.json` yet: while it is set, the iOS archive injects the Associated Domains entitlement and fails (`Provisioning profile … doesn't include the Associated Domains capability` / `No Accounts`). Add it back once the App ID is provisioned for Associated Domains **and** `play.lunorx.xyz` serves `/.well-known/apple-app-site-claim` (iOS) and `/.well-known/assetlinks.json` (Android). Until then taps on `play.lunorx.xyz` links do not open the app by themselves; `lunorx://` links and pasting a link or token into Search or the playlist editor's Import-from-link still open the Shared screen.
 
 ### Podcasts (mobile only)
 
@@ -44,6 +48,7 @@ When the direct stream is refused (`Failed` or `MediaRefused`), `core/playback/r
 ### Launcher icon
 
 `src-tauri/gen/` is git-ignored and `tauri android init` writes Tauri's default icon there once. `scripts/sync-android-icons.sh` (run by `mobile-env.sh` before every command) copies `src-tauri/icons/android/*` into it, so each APK carries the project icon. A launcher caches icons; if the old one stays, uninstall the app once (this clears sign-in and cache).
+
 
 ## iOS audio format
 

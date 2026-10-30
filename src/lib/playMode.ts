@@ -1,5 +1,6 @@
 "use client";
 import { playerSetMode } from "../services/tauri/player";
+import { notify } from "./notice";
 import { usePlayback } from "./playback";
 
 export type Repeat = "off" | "all" | "one";
@@ -22,7 +23,7 @@ export function setPlayMode(next: { repeat?: Repeat; autoplay?: boolean }) {
   const autoplay = next.autoplay ?? cur.autoplay;
   write(REPEAT_KEY, repeat);
   write(AUTOPLAY_KEY, String(autoplay));
-  void playerSetMode(repeat, autoplay).catch(() => {});
+  void playerSetMode(repeat, autoplay).catch(() => notify("Could not change the play mode."));
 }
 
 export const nextRepeat = (r: Repeat): Repeat => REPEATS[(REPEATS.indexOf(r) + 1) % REPEATS.length];

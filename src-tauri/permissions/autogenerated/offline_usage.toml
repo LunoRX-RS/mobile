@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-offline-usage"
+description = "Enables the offline_usage command without any pre-configured scope."
+commands.allow = ["offline_usage"]
+
+[[permission]]
+identifier = "deny-offline-usage"
+description = "Denies the offline_usage command without any pre-configured scope."
+commands.deny = ["offline_usage"]

@@ -12,6 +12,7 @@ pub mod yt;
 
 pub mod analytics;
 pub mod library;
+pub mod secrets;
 pub mod stats;
 pub mod telemetry;
 pub mod youtube_import;

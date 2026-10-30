@@ -40,15 +40,6 @@ pub fn run() {
                 .app_data_dir()
                 .map(|dir| dir.join("liked-songs.json"))
                 .map_err(|_| core::library::LibraryError::Storage);
-            // A `lunorx://share/{token}` link opens the app on the shared playlist, whether the app was running or not.
-            app.manage(commands::share::PendingShare::default());
-            let share_handle = app.handle().clone();
-            app.deep_link().on_open_url(move |event| {
-                commands::share::accept_urls(&share_handle, &event.urls())
-            });
-            if let Ok(Some(urls)) = app.deep_link().get_current() {
-                commands::share::accept_urls(app.handle(), &urls);
-            }
             app.manage(commands::library::LibraryState::open(library_path));
             // Liked-songs sync keeps its account files under the app data directory next to the signed-out file.
             if let Ok(dir) = app.path().app_data_dir() {
@@ -128,8 +119,17 @@ pub fn run() {
                 eprintln!("sync engine unavailable: {kind:?}");
             }
             app.manage(commands::sync::SyncEngineState::new(engine));
+            commands::sync::start_auto_sync(app.handle().clone());
             app.manage(commands::remote::RemoteState::default());
+            app.manage(commands::share::PendingShare::default());
             commands::likes::start(app.handle());
+            // Links that opened the app, and links while it runs (on Android and iOS the plugin forwards them here).
+            let handle = app.handle().clone();
+            app.deep_link()
+                .on_open_url(move |event| commands::share::accept_urls(&handle, &event.urls()));
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                commands::share::accept_urls(app.handle(), &urls);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -155,9 +155,14 @@ pub fn run() {
             commands::youtube::youtube_connect_finish,
             commands::youtube::youtube_connection_status,
             commands::youtube::youtube_import,
+            commands::youtube_import::youtube_import_playlist_from_url,
+            commands::podcasts::podcast_browse,
             commands::youtube::youtube_disconnect,
             commands::youtube::youtube_like_push_get,
             commands::youtube::youtube_like_push_set,
+            commands::share::shared_link_take,
+            commands::share::shared_token_from_url,
+            commands::share::shared_playlist_get,
             commands::sync::sync_sign_in,
             commands::sync::sync_sign_out,
             commands::sync::sync_discard_pending,
@@ -166,6 +171,8 @@ pub fn run() {
             commands::sync::sync_add_local_entry,
             commands::sync::sync_upload_playlist,
             commands::sync::sync_list_local_playlists,
+            commands::sync::sync_check_playlists,
+            commands::sync::sync_set_playlist_description,
             commands::sync::sync_playlist_entries,
             commands::sync::sync_delete_local_playlist,
             commands::sync::sync_rename_local_playlist,
@@ -187,11 +194,6 @@ pub fn run() {
             commands::sync::sync_remove_local_entry,
             commands::sync::sync_flush_pending,
             commands::sync::sync_register,
-            commands::youtube_import::youtube_import_playlist_from_url,
-            commands::podcasts::podcast_browse,
-            commands::share::shared_link_take,
-            commands::share::shared_token_from_url,
-            commands::share::shared_playlist_get,
             commands::sync::sync_share_playlist,
             commands::sync::sync_list_shares,
             commands::sync::sync_revoke_share,
@@ -220,6 +222,8 @@ pub fn run() {
             commands::offline::offline_cancel,
             commands::offline::offline_remove,
             commands::offline::offline_set_limit,
+            commands::offline::offline_usage,
+            commands::offline::offline_clear_transient,
             commands::lrc::lrc_load,
             commands::lrc::lrc_save,
             commands::lrc::lrc_delete,

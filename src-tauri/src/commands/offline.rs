@@ -1,10 +1,12 @@
 //! Main-window-only IPC for device-local media. Playlist contents come from the local Core store.
 use crate::{
-    commands::{player::PlayerState, sync::SyncEngineState, youtube::YouTubeState},
-    core::playback::cache::{CacheError, OfflineManager, OfflineStatus, OfflineTrack},
+    commands::{
+        emit::emit_main, player::PlayerState, sync::SyncEngineState, youtube::YouTubeState,
+    },
+    core::playback::cache::{CacheError, CacheUsage, OfflineManager, OfflineStatus, OfflineTrack},
 };
 use std::sync::Arc;
-use tauri::{State, WebviewWindow};
+use tauri::{AppHandle, Manager, State, WebviewWindow};
 pub struct OfflineState {
     pub manager: Result<Arc<OfflineManager>, CacheError>,
 }
@@ -133,4 +135,32 @@ pub fn offline_set_limit(
 ) -> Result<(), CacheError> {
     main(&window)?;
     manager(&state)?.cache.set_limit(bytes)
+}
+/// Everything the media cache occupies, by kind and by playlist kept offline. Lyric sidecars sit in a
+/// different directory from the media cache; when that path is unavailable their bytes read as zero.
+#[tauri::command]
+pub fn offline_usage(
+    window: WebviewWindow,
+    state: State<'_, OfflineState>,
+    app: AppHandle,
+) -> Result<CacheUsage, CacheError> {
+    main(&window)?;
+    let lyrics = app
+        .path()
+        .app_cache_dir()
+        .ok()
+        .map(|dir| dir.join("lyrics"));
+    manager(&state)?.cache.usage(lyrics.as_deref())
+}
+/// Frees cached songs no playlist keeps and no player is using, and reports the bytes released.
+#[tauri::command]
+pub fn offline_clear_transient(
+    window: WebviewWindow,
+    state: State<'_, OfflineState>,
+    app: AppHandle,
+) -> Result<u64, CacheError> {
+    main(&window)?;
+    let freed = manager(&state)?.cache.clear_transient()?;
+    let _ = emit_main(&app, "core://offline/changed", &());
+    Ok(freed)
 }

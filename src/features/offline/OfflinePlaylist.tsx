@@ -5,7 +5,7 @@ import { Button } from "../../components/ui";
 import { TrackCover } from "../../components/TrackCover";
 import type { LocalPlaylistDto } from "../../services/tauri/sync";
 import { playTrack, usePlayback } from "../../lib/playback";
-import { offlineStatus, offlineKeep, offlineCancel, offlineRemove, offlineSetLimit, offlineError, type OfflineStatus } from "../../services/tauri/offline";
+import { offlineStatus, offlineKeep, offlineCancel, offlineRemove, offlineSetLimit, offlineError, offlineUsage, offlineClearTransient, type OfflineStatus, type CacheUsage } from "../../services/tauri/offline";
 
 export function useOffline(id = "", page = 0, playlist: LocalPlaylistDto | null = null) {
   const [status, setStatus] = useState<OfflineStatus | null>(null);
@@ -32,6 +32,11 @@ export function useOffline(id = "", page = 0, playlist: LocalPlaylistDto | null 
   return { status, error, busy, act };
 }
 const megabytes = (bytes: number) => `${Math.round(bytes / 1048576)} MB`;
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1).replace(/\.0$/, "")} GB`;
+  if (bytes >= 1024 ** 2) return `${Math.round(bytes / 1024 ** 2)} MB`;
+  return `${Math.round(bytes / 1024)} KB`;
+}
 
 export function OfflinePlaylist({ playlist }: { playlist: LocalPlaylistDto }) {
   const { id, entryCount: entries } = playlist;
@@ -68,12 +73,53 @@ export function OfflinePlaylist({ playlist }: { playlist: LocalPlaylistDto }) {
 export function CacheSettings() {
   const { status, error, busy, act } = useOffline();
   const [limit, setLimit] = useState("2048");
+  // The desktop Storage view's numbers: one call, refreshed when core says the cache changed.
+  const [usage, setUsage] = useState<CacheUsage | null>(null);
+  const [freed, setFreed] = useState<number | null>(null);
+  const usageVersion = useRef(0);
+  const refreshUsage = useCallback(async () => {
+    const current = ++usageVersion.current;
+    try { const value = await offlineUsage(); if (current === usageVersion.current) setUsage(value); }
+    catch { if (current === usageVersion.current) setUsage(null); }
+  }, []);
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen("core://offline/changed", () => { void refreshUsage(); }).then((fn) => { if (disposed) fn(); else { unlisten = fn; void refreshUsage(); } }, () => {});
+    return () => { disposed = true; usageVersion.current++; unlisten?.(); };
+  }, [refreshUsage]);
   useEffect(() => { if (status) setLimit(String(status.limitBytes / 1048576)); }, [status?.limitBytes]);
+  const run = async (action: () => Promise<unknown>) => {
+    await act(async () => { await action(); await refreshUsage(); });
+  };
+  const over = usage !== null && usage.totalBytes >= usage.limitBytes * 0.9;
+  const share = (bytes: number) => Math.min(100, (bytes / usage!.limitBytes) * 100);
   return <section id="settings-cache" className="flex flex-col gap-3 rounded-lg bg-frost-100 p-4">
     <h3 className="font-semibold">Disk cache & offline storage</h3>
+    {usage && <div className="flex flex-col gap-2">
+      <div role="meter" aria-valuemin={0} aria-valuemax={usage.limitBytes} aria-valuenow={usage.totalBytes} aria-valuetext={`${formatBytes(usage.totalBytes)} of ${formatBytes(usage.limitBytes)} used`} className="flex h-1.5 w-full overflow-hidden rounded-full bg-frost-300">
+        <div className={over ? "bg-caution-amber" : "bg-secondary-text"} style={{ width: `${share(usage.audioBytes)}%` }} />
+        <div className={over ? "bg-caution-amber/70" : "bg-secondary-text/50"} style={{ width: `${share(usage.artworkBytes + usage.lyricBytes)}%` }} />
+      </div>
+      <p className="text-[12px] leading-4 text-secondary-text">
+        {formatBytes(usage.totalBytes)} of {formatBytes(usage.limitBytes)} · {formatBytes(usage.audioBytes)} songs · {formatBytes(usage.artworkBytes)} artwork · {formatBytes(usage.lyricBytes)} lyrics
+      </p>
+    </div>}
     <p className="text-[13px] text-secondary-text">{status ? `${megabytes(status.usedBytes)} audio used · ${megabytes(status.pinnedBytes)} kept offline` : "Reading storage…"}</p>
     <p className="text-[13px] text-secondary-text">Played songs are cached automatically. Old unused songs are removed first; offline playlists and the playing song stay protected.</p>
-    <div className="flex flex-wrap items-center gap-2"><label htmlFor="cache-size" className="text-[13px]">Audio cache limit (MB)</label><input id="cache-size" type="number" min={64} max={20480} step={1} value={limit} onChange={(e) => setLimit(e.target.value)} className="w-28 rounded bg-frost-200 px-3 py-2" /><Button disabled={busy || !status || !Number.isInteger(Number(limit)) || Number(limit) < 64 || Number(limit) > 20480} onClick={() => void act(() => offlineSetLimit(Number(limit) * 1048576))}>Apply</Button></div>
+    <div className="flex flex-wrap items-center gap-2"><label htmlFor="cache-size" className="text-[13px]">Audio cache limit (MB)</label><input id="cache-size" type="number" min={64} max={20480} step={1} value={limit} onChange={(e) => setLimit(e.target.value)} className="w-28 rounded bg-frost-200 px-3 py-2" /><Button disabled={busy || !status || !Number.isInteger(Number(limit)) || Number(limit) < 64 || Number(limit) > 20480} onClick={() => void run(() => offlineSetLimit(Number(limit) * 1048576))}>Apply</Button></div>
+    {usage && <div className="flex flex-wrap items-center justify-between gap-2">
+      <p className="text-[13px]">Cached songs not kept offline: <span className="text-secondary-text">{formatBytes(usage.clearableBytes)}</span></p>
+      <Button variant="ghost" disabled={busy || usage.clearableBytes === 0} onClick={() => void run(async () => setFreed(await offlineClearTransient()))}>Clear cached</Button>
+    </div>}
+    {freed !== null && <p role="status" className="text-[13px] text-secondary-text">Freed {formatBytes(freed)}.</p>}
+    {usage && usage.playlists.length > 0 && <ul className="flex flex-col gap-1">
+      {usage.sharedBytes > 0 && <li className="text-[12px] text-secondary-text">{formatBytes(usage.sharedBytes)} is kept by more than one playlist, so these sizes are not a split of the total.</li>}
+      {usage.playlists.map((p) => <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
+        <span>{p.name} <span className="text-[12px] text-secondary-text">· {p.tracks} songs · {formatBytes(p.bytes)}</span></span>
+        <Button variant="ghost" disabled={busy} onClick={() => void run(async () => { await offlineRemove(p.id); setFreed(null); })}>Remove</Button>
+      </li>)}
+    </ul>}
     <p className="text-[12px] text-secondary-text">Artwork and metadata use additional space. Keep offline is available in Library → Playlists. New downloads use the current audio quality; existing offline audio is reused. Removed copies stay if another offline playlist uses them; playing files remain cached until space is needed.</p>
     {error && <p role="alert" className="text-[13px]">{error}</p>}
   </section>;

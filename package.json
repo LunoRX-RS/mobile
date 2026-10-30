@@ -1,7 +1,7 @@
 {
   "name": "lunorx",
   "private": true,
-  "version": "1.0.0-rc.3",
+  "version": "1.0.0-rc.4",
   "type": "module",
   "scripts": {
     "dev": "next dev --port 1421 --hostname 0.0.0.0",

@@ -117,7 +117,9 @@ export function LoginGate() {
   const registering = mode === "register";
 
   return (
-    <div className="fixed inset-0 z-[90] overflow-y-auto bg-night-canvas">
+    // ln-safe-x sits here, not on the padded column below: it is unlayered CSS, so on the same element it would
+    // silently replace Tailwind's px-6 and flush the whole gate against the screen edge.
+    <div className="ln-safe-x fixed inset-0 z-[90] overflow-y-auto bg-night-canvas">
       <div aria-hidden="true" className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className={`absolute inset-0 ${AMBIENT_BG.violet}`} />
         <div className="ln-login-wall-mask">
@@ -130,7 +132,7 @@ export function LoginGate() {
         <div className="ln-login-shade absolute inset-0" />
       </div>
 
-      <div className="ln-safe-top ln-safe-bottom ln-safe-x relative flex min-h-full flex-col px-6 pt-10 pb-8">
+      <div className="ln-safe-top ln-safe-bottom relative flex min-h-full flex-col px-6 pt-10 pb-8">
         <div className="flex items-center gap-2 text-primary-text">
           <Moon size={18} aria-hidden="true" fill="currentColor" fillOpacity={0.9} className="shrink-0" />
           <span className="text-[14px] leading-5 font-semibold tracking-[-0.01em]">LunoRX</span>

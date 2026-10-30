@@ -10,17 +10,16 @@ import {
   type SearchResponseDto,
 } from "../../services/tauri/search";
 import { useUi } from "../../lib/store";
-import { playTrack } from "../../lib/playback";
-import { parseYouTubeLink } from "../../lib/ytLink";
-import { playerTrackInfo } from "../../services/tauri/player";
-import { LinkPlay, linkTrack } from "./LinkPlay";
-import { sharedTokenFromUrl } from "../../services/tauri/share";
 import { AnimatePresence } from "motion/react";
 import { CollapseLi } from "../../components/Motion";
 import { Button, EmptyState, Screen, Section, Skeleton, StatusNote } from "../../components/ui";
 import SearchSuggestions from "./SearchSuggestions";
 import LiveFeed from "../discovery/LiveFeed";
 import { ResultRow, SourceGroup, providerName } from "./SourceGroup";
+import { LinkPlay, linkTrack } from "./LinkPlay";
+import { parseYouTubeLink } from "../../lib/ytLink";
+import { playTrack } from "../../lib/playback";
+import { playerTrackInfo } from "../../services/tauri/player";
 
 const GENERIC_ERROR = "Something went wrong. Try again.";
 
@@ -90,8 +89,6 @@ export default function SearchScreen() {
       );
       return;
     }
-    // A pasted LunoRX share link (or its bare token) opens the shared playlist.
-    if (await sharedTokenFromUrl(text).then((token) => { if (token) useUi.getState().openShared(token); return token !== null; }, () => false)) return;
     pushRecent(text);
     const id = crypto.randomUUID();
     const previous = view.id;
@@ -145,11 +142,11 @@ export default function SearchScreen() {
   }
 
   const loading = view.id !== null;
+  const link = parseYouTubeLink(query);
   const result = view.result;
   const hits = result?.hits ?? [];
   const noHits = result !== null && hits.length === 0;
   const noticeGroups = result?.groups.filter((g) => g.kind !== "ok") ?? [];
-  const link = parseYouTubeLink(query);
   const youtubeNeedsKey = providers.find((p) => p.provider === "YouTube")?.search === "RequiresAuth";
 
   return (
@@ -250,9 +247,13 @@ export default function SearchScreen() {
         {link && <LinkPlay link={link} />}
 
         {!loading && !link && hits.length > 0 && (
-          <Section id="search-songs" title="Songs"><ul aria-label="Search results" className="lx-stagger flex flex-col">
-            {hits.map((hit, i) => <ResultRow key={`${hit.provider}:${hit.providerTrackId}`} hit={hit} following={hits.slice(i + 1)} />)}
-          </ul></Section>
+          // One list: each row's provider mark tells YouTube Music from YouTube. Core ranks each source on its own, so
+          // videos are not crowded out by songs.
+          <Section id="search-songs" title="Songs">
+            <ul aria-label="Search results" className="lx-stagger flex flex-col">
+              {hits.map((hit, i) => <ResultRow key={`${hit.provider}:${hit.providerTrackId}`} hit={hit} following={hits.slice(i + 1)} />)}
+            </ul>
+          </Section>
         )}
         {!loading && noticeGroups.map(group => <SourceGroup key={group.provider} group={group} onRetry={() => void runSearch(view.text)} />)}
 

@@ -1237,6 +1237,9 @@ dialog.lx-np[data-np-layout="page"] { --np-scrim: 0.5; }
 /* ---------- Mobile (iOS / Android) ---------- */
 /* Safe areas: the viewport is `cover`, so the shell pads itself around the notch, status bar and home indicator. */
 /* Android WebView reports env() as 0 when drawn edge to edge; the native plugin writes --sai-* instead (see MOBILE.md). */
+/* Footgun: these rules are unlayered, so they beat Tailwind's layered px-*/pt-*/pb-* on the SAME element — the safe
+   inset (0 in portrait) replaces the utility padding entirely. Put ln-safe-* on an ancestor of the padded content
+   instead (see LoginGate.tsx). */
 .ln-safe-top { padding-top: max(env(safe-area-inset-top), var(--sai-top, 0px)); }
 .ln-safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), var(--sai-bottom, 0px)); }
 .ln-safe-x { padding-left: max(env(safe-area-inset-left), var(--sai-left, 0px)); padding-right: max(env(safe-area-inset-right), var(--sai-right, 0px)); }

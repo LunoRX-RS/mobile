@@ -19,6 +19,7 @@ use super::credentials::TokenStore;
 use super::local_store::{LocalEntry, LocalPlaylist, LocalStore, UploadStep};
 use super::persist;
 use super::queue::{OfflineQueue, QueueError};
+use super::settings::{share_base, share_link};
 use crate::commands::sync::{Checkout, SyncEngineState};
 
 /// The only error strings the sync layer exposes.
@@ -323,13 +324,6 @@ impl SyncEngine {
         self.commit()
     }
 
-    pub fn delete_local(&mut self, local_id: &str) -> Result<(), ErrorCategory> {
-        self.store
-            .delete_local(local_id)
-            .map_err(|e| category(&e))?;
-        self.commit()
-    }
-
     pub fn local_playlists(&self) -> &[LocalPlaylist] {
         self.store.playlists()
     }
@@ -401,7 +395,6 @@ fn auth_category(e: &AuthError) -> ErrorCategory {
     }
 }
 
-/// Signs in. Refused while writes are queued: they belong to the previous account and must not be replayed onto a new one.
 /// Queues the antibot tokens the next register/login calls send, replacing leftovers. An empty list clears them.
 pub(crate) async fn set_antibot(
     h: &mut Host<'_>,
@@ -431,6 +424,7 @@ pub(crate) async fn register(
     sign_in(h, email, password).await
 }
 
+/// Signs in. Refused while writes are queued: they belong to the previous account and must not be replayed onto a new one.
 pub(crate) async fn sign_in(
     h: &mut Host<'_>,
     email: &str,
@@ -664,6 +658,170 @@ pub(crate) async fn stats_clear_remote(h: &mut Host<'_>) -> Result<(), ErrorCate
     api.delete_stats(&token).await.map_err(|e| category(&e))
 }
 
+/// Sets or clears a playlist's description text (an import marker is kept). A playlist that is only on this device changes
+/// at once. An uploaded one changes on the server first, with its version, and only then here, so the two cannot drift.
+/// It is refused while writes are waiting: they would move the version under this request.
+pub(crate) async fn set_description(
+    h: &mut Host<'_>,
+    local_id: &str,
+    text: Option<&str>,
+) -> Result<(), ErrorCategory> {
+    let text = text.map(str::trim).filter(|d| !d.is_empty());
+    let target = h
+        .step(|e| {
+            let pl = e
+                .store
+                .playlists()
+                .iter()
+                .find(|p| p.id == local_id)
+                .ok_or(ErrorCategory::Validation)?;
+            let Some(remote) = pl.remote_id.clone() else {
+                e.store
+                    .set_description(local_id, text, false)
+                    .map_err(|err| category(&err))?;
+                e.commit()?;
+                return Ok(None);
+            };
+            if e.queued_writes(&remote) > 0 || pl.queued > 0 {
+                return Err(ErrorCategory::Validation);
+            }
+            Ok(Some((e.api.clone(), e.token()?, remote, pl.version)))
+        })
+        .await?;
+    let Some((api, token, remote, version)) = target else {
+        return Ok(());
+    };
+    // Checked here too, so a bad text never reaches the server.
+    if text.is_some_and(|t| t.chars().count() > 2000 || super::local_store::marker_id(t).is_some())
+    {
+        return Err(ErrorCategory::Validation);
+    }
+    let updated = api
+        .update_playlist(
+            &token,
+            &remote,
+            &super::api::PlaylistUpdateRequest {
+                expected_version: version,
+                name: None,
+                description: Some(text.map(str::to_string)),
+            },
+        )
+        .await
+        .map_err(|e| category(&e))?;
+    h.step(|e| {
+        e.store.adopt_server(&remote, updated.version, None);
+        e.store
+            .set_description(local_id, text, true)
+            .map_err(|err| category(&err))?;
+        e.commit()
+    })
+    .await
+}
+
+/// Deletes a playlist. A playlist that is only on this device goes at once. An uploaded one is deleted on the server
+/// first, with its version, and only then here, so a failed request leaves both copies. A playlist the server no
+/// longer has counts as deleted. Refused while writes are waiting: they would move the version under this request.
+pub(crate) async fn delete_playlist(h: &mut Host<'_>, local_id: &str) -> Result<(), ErrorCategory> {
+    let target = h
+        .step(|e| {
+            let pl = e
+                .store
+                .playlists()
+                .iter()
+                .find(|p| p.id == local_id)
+                .ok_or(ErrorCategory::Validation)?;
+            let Some(remote) = pl.remote_id.clone() else {
+                e.store
+                    .delete_local(local_id)
+                    .map_err(|err| category(&err))?;
+                e.commit()?;
+                return Ok(None);
+            };
+            if e.queued_writes(&remote) > 0 || pl.queued > 0 {
+                return Err(ErrorCategory::Validation);
+            }
+            Ok(Some((e.api.clone(), e.token()?, remote, pl.version)))
+        })
+        .await?;
+    let Some((api, token, remote, version)) = target else {
+        return Ok(());
+    };
+    match api.delete_playlist(&token, &remote, version).await {
+        Ok(()) | Err(SyncError::NotFound(_)) => {}
+        Err(e) => return Err(category(&e)),
+    }
+    h.step(|e| {
+        e.store
+            .delete_local(local_id)
+            .map_err(|err| category(&err))?;
+        // A local edit made during the request may have queued a write; it would outlive its playlist.
+        e.queue.discard(&remote);
+        e.commit()
+    })
+    .await
+}
+
+/// Where a local playlist stands against the server. Read-only: nothing is uploaded or changed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RemoteState {
+    /// Never uploaded from this device.
+    NotUploaded,
+    /// Uploaded once, but the server no longer has it (deleted on another device or in the account).
+    MissingOnServer,
+    /// The server copy changed since this device last saw it.
+    ServerNewer,
+    /// This device has entries or edits the server has not received yet.
+    LocalChanges,
+    /// The server has everything this device has.
+    InSync,
+}
+
+/// Pure comparison, so the rules are testable without a server. `server` maps remote id to its version.
+pub(crate) fn remote_state(
+    p: &LocalPlaylist,
+    queued_writes: usize,
+    server: &std::collections::HashMap<String, i64>,
+) -> RemoteState {
+    let Some(remote) = p.remote_id.as_deref() else {
+        return RemoteState::NotUploaded;
+    };
+    let Some(&version) = server.get(remote) else {
+        return RemoteState::MissingOnServer;
+    };
+    if version > p.version {
+        RemoteState::ServerNewer
+    } else if queued_writes > 0 || p.entries.len() > p.uploaded {
+        RemoteState::LocalChanges
+    } else {
+        RemoteState::InSync
+    }
+}
+
+/// Asks the server which playlists it holds and compares them with this device's. Uploads nothing: the user decides.
+pub(crate) async fn check_remote(
+    h: &mut Host<'_>,
+) -> Result<Vec<(String, RemoteState)>, ErrorCategory> {
+    let (api, token) = h.step(|e| Ok((e.api.clone(), e.token()?))).await?;
+    let server: std::collections::HashMap<String, i64> = api
+        .list_playlists(&token)
+        .await
+        .map_err(|e| category(&e))?
+        .into_iter()
+        .map(|p| (p.id, p.version))
+        .collect();
+    h.step(|e| {
+        Ok(e.local_playlists()
+            .iter()
+            .map(|p| {
+                let queued = p.remote_id.as_deref().map_or(0, |r| e.queued_writes(r));
+                (p.id.clone(), remote_state(p, queued, &server))
+            })
+            .collect())
+    })
+    .await
+}
+
 /// Sends the unsent tail of a playlist, one request at a time. Returns the remote id.
 pub(crate) async fn upload(h: &mut Host<'_>, local_id: &str) -> Result<String, ErrorCategory> {
     let (api, token) = h.step(|e| Ok((e.api.clone(), e.token()?))).await?;
@@ -694,16 +852,22 @@ pub(crate) async fn share(h: &mut Host<'_>, local_id: &str) -> Result<ShareLink,
         .create_share(&token, &remote)
         .await
         .map_err(|e| category(&e))?;
+    // The link is the website's page, not the API. A bad configured base is an internal error, not a wrong link.
+    let url = share_link(&share_base(), &created.token).ok_or(ErrorCategory::Internal)?;
+    // Both the token and the URL containing it are capabilities; whichever surfaces in free text must mask.
+    let registry = crate::core::secrets::registry();
+    registry.register(&created.token);
+    registry.register(&url);
     Ok(ShareLink {
         id: created.id,
-        url: api.share_url(&created.token),
+        url,
     })
 }
 
 pub(crate) async fn list_shares(
     h: &mut Host<'_>,
     local_id: &str,
-) -> Result<Vec<(String, String, bool)>, ErrorCategory> {
+) -> Result<Vec<(String, String, bool, Option<String>)>, ErrorCategory> {
     let (api, token, remote) = h
         .step(|e| Ok((e.api.clone(), e.token()?, remote_of(e, local_id)?)))
         .await?;
@@ -715,7 +879,12 @@ pub(crate) async fn list_shares(
         .into_iter()
         .map(|s| {
             let active = s.revoked_at.is_none();
-            (s.id, s.created_at, active)
+            // The URL, rebuilt from the token the server keeps for the owner; only for a live link.
+            let url = s
+                .token
+                .filter(|_| active)
+                .and_then(|t| share_link(&share_base(), &t));
+            (s.id, s.created_at, active, url)
         })
         .collect())
 }
@@ -2666,5 +2835,68 @@ mod tests {
         assert_eq!(e.status().await.state, SyncState::Synced);
         assert!(e.store.refresh_marks().is_empty());
         assert_eq!(s.lines(), ["POST /api/v1/auth/login HTTP/1.1".to_string()]);
+    }
+}
+
+#[cfg(test)]
+mod remote_state_rules {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn playlist(
+        remote: Option<&str>,
+        version: i64,
+        entries: usize,
+        uploaded: usize,
+    ) -> LocalPlaylist {
+        let entry = LocalEntry {
+            provider: Provider::YouTube,
+            provider_track_id: "dQw4w9WgXcQ".into(),
+            provider_url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ".into(),
+            title: None,
+            artists: None,
+            artwork_url: None,
+            duration_ms: None,
+            remote_entry_id: None,
+        };
+        LocalPlaylist {
+            id: "l1".into(),
+            name: "n".into(),
+            description: None,
+            entries: vec![entry; entries],
+            remote_id: remote.map(str::to_owned),
+            uploaded,
+            queued: 0,
+            version,
+        }
+    }
+
+    #[test]
+    fn each_state_follows_the_rules() {
+        let server = HashMap::from([("r1".to_owned(), 3_i64)]);
+        assert_eq!(
+            remote_state(&playlist(None, 0, 2, 0), 0, &server),
+            RemoteState::NotUploaded
+        );
+        assert_eq!(
+            remote_state(&playlist(Some("gone"), 3, 1, 1), 0, &server),
+            RemoteState::MissingOnServer
+        );
+        assert_eq!(
+            remote_state(&playlist(Some("r1"), 2, 1, 1), 0, &server),
+            RemoteState::ServerNewer
+        );
+        assert_eq!(
+            remote_state(&playlist(Some("r1"), 3, 2, 1), 0, &server),
+            RemoteState::LocalChanges
+        );
+        assert_eq!(
+            remote_state(&playlist(Some("r1"), 3, 1, 1), 1, &server),
+            RemoteState::LocalChanges
+        );
+        assert_eq!(
+            remote_state(&playlist(Some("r1"), 3, 1, 1), 0, &server),
+            RemoteState::InSync
+        );
     }
 }

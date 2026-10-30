@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseYouTubeLink } from "../src/lib/ytLink.ts";
+import { parseYouTubeLink } from "./ytLink";
 
 test("YouTube and YouTube Music links give the video id", () => {
   const id = "dQw4w9WgXcQ";

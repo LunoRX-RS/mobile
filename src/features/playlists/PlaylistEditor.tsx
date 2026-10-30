@@ -1,4 +1,5 @@
 "use client";
+import { toneFor } from "../../lib/media";
 import { OfflinePlaylist, useOffline } from "../offline/OfflinePlaylist";
 import { ResultRow } from "../search/SourceGroup";
 import { menuHandlers } from "../../components/ContextMenu";
@@ -7,10 +8,9 @@ import { moveInPlaylist, removeFromPlaylist } from "../../lib/playlistActions";
 import { useUi } from "../../lib/store";
 import { playTrack, usePlayback } from "../../lib/playback";
 import { useImport } from "../../lib/youtubeImport";
-import { youtubeImportPlaylistFromUrl } from "../../services/tauri/youtube";
-import { saveSharedPlaylist, sharedPlaylistGet, sharedTokenFromUrl, type SharedPlaylistDto } from "../../services/tauri/share";
 import { offlineKeep } from "../../services/tauri/offline";
-import { syncDeleteLocalPlaylist, syncPlaylistEntries, syncRenameLocalPlaylist, type LocalEntryDto } from "../../services/tauri/sync";
+import { syncDeleteLocalPlaylist, syncPlaylistEntries, syncRenameLocalPlaylist, syncSetPlaylistDescription, type LocalEntryDto } from "../../services/tauri/sync";
+import { youtubeImportPlaylistFromUrl } from "../../services/tauri/youtube";
 import type { SearchHitDto } from "../../services/tauri/search";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -26,6 +26,7 @@ import {
   type ResolutionDto,
 } from "../../services/tauri/sync";
 import { ShareSection } from "./ShareSection";
+import { saveSharedPlaylist, sharedPlaylistGet, sharedTokenFromUrl, type SharedPlaylistDto } from "../../services/tauri/share";
 import { describeUpload, entriesLabel, errorText, needsUpload, useLocalPlaylists, useSyncStatus } from "./usePlaylists";
 import { Button, EmptyState, Group, GroupRow, Screen, Skeleton, StatusNote, cx } from "../../components/ui";
 
@@ -67,7 +68,7 @@ function ListRow({ p, selected, onSelect }: { p: LocalPlaylistDto; selected: boo
           selected ? "bg-frost-200" : "hover:bg-frost-100",
         )}
       >
-        <Art seed={p.id} tone="ink" grain={false} rounded="rounded-[6px]" className="size-10 shrink-0" />
+        <Art seed={p.id} tone={toneFor(p.id)} grain={false} rounded="rounded-[6px]" className="size-10 shrink-0" />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] leading-[18px] font-semibold" title={p.name}>
             {p.name}
@@ -141,6 +142,7 @@ export default function PlaylistEditor({ selectedId, onSelect, onNavigate }: Pro
   const [confirmServer, setConfirmServer] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [noting, setNoting] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const focusNext = useRef<"heading" | string | null>(null);
@@ -162,7 +164,7 @@ export default function PlaylistEditor({ selectedId, onSelect, onNavigate }: Pro
     focusNext.current = null;
   });
 
-  useEffect(() => { setConfirmServer(false); setConfirmDelete(false); setRenaming(null); }, [selectedId]);
+  useEffect(() => { setConfirmServer(false); setConfirmDelete(false); setRenaming(null); setNoting(null); }, [selectedId]);
 
   async function saveRename() {
     if (!selected || renaming === null) return;
@@ -170,6 +172,13 @@ export default function PlaylistEditor({ selectedId, onSelect, onNavigate }: Pro
     if (name === "" || name === selected.name) { setRenaming(null); return; }
     const done = await run("detail", "Renaming…", () => "Renamed.", () => syncRenameLocalPlaylist(selected.id, name));
     if (done !== null) setRenaming(null);
+  }
+  async function saveNote() {
+    if (!selected || noting === null) return;
+    const text = noting.trim();
+    if (text === (selected.description ?? "")) { setNoting(null); return; }
+    const done = await run("detail", "Saving…", () => text === "" ? "Description removed." : "Description saved.", () => syncSetPlaylistDescription(selected.id, text === "" ? null : text));
+    if (done !== null) setNoting(null);
   }
   // "Delete playlist…" from a right-click menu opens the same confirmation as the button.
   const deleteRequest = useUi((s) => s.deleteRequest);
@@ -276,7 +285,7 @@ export default function PlaylistEditor({ selectedId, onSelect, onNavigate }: Pro
           placeholder="Paste a LunoRX or YouTube playlist link"
           autoComplete="off"
           disabled={importing}
-          className="h-11 min-w-0 flex-1 rounded-[8px] bg-frost-200 px-3 text-[14px] text-primary-text outline-none placeholder:text-tertiary-text focus:bg-frost-300"
+          className="h-8 min-w-0 flex-1 rounded-[8px] bg-frost-200 px-3 text-[13px] text-primary-text outline-none placeholder:text-tertiary-text focus:bg-frost-300"
         />
         <Button variant="secondary" type="submit" disabled={importing || busy}>
           {importing ? "Importing…" : "Import"}
@@ -309,6 +318,8 @@ export default function PlaylistEditor({ selectedId, onSelect, onNavigate }: Pro
     </form>
   );
 
+  // An uploaded playlist's description changes on the server first, which needs its queue empty.
+  const waiting = !!selected && !!selected.remoteId && selected.queuedWrites > 0;
   const detail = selected && (
     <div className="flex min-w-0 flex-col gap-6">
       <Button variant="ghost" onClick={() => { focusNext.current = selected.id; onSelect(null); }} className="self-start px-2 min-[1100px]:hidden">
@@ -317,7 +328,7 @@ export default function PlaylistEditor({ selectedId, onSelect, onNavigate }: Pro
       </Button>
 
       <section aria-labelledby="editor-detail" className="flex items-end gap-5">
-        <Art seed={selected.id} tone="ink" rounded="rounded-[10px]" className="size-[152px] shrink-0 shadow-[0_2px_10px_rgba(0,0,0,0.4)]" />
+        <Art seed={selected.id} tone={toneFor(selected.id)} rounded="rounded-[10px]" className="size-[152px] shrink-0 shadow-[0_2px_10px_rgba(0,0,0,0.4)]" />
         <div className="flex min-w-0 flex-col gap-1 pb-1">
           {renaming !== null ? (
             <form className="flex items-center gap-2" onSubmit={(e) => { e.preventDefault(); void saveRename(); }}>
@@ -353,6 +364,38 @@ export default function PlaylistEditor({ selectedId, onSelect, onNavigate }: Pro
           <p className="truncate text-[13px] leading-[18px] text-secondary-text">
             {entriesLabel(selected.entryCount)} · {describeUpload(selected)}
           </p>
+          {noting !== null ? (
+            <form className="flex flex-col gap-2" onSubmit={(e) => { e.preventDefault(); void saveNote(); }}>
+              <textarea
+                autoFocus
+                value={noting}
+                rows={3}
+                maxLength={2000}
+                aria-label="Playlist description"
+                placeholder="What is this playlist for?"
+                onChange={(e) => setNoting(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setNoting(null);
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void saveNote(); }
+                }}
+                className="w-full resize-y rounded-[8px] bg-frost-200 px-3 py-2 text-[13px] leading-[18px] outline-none focus:bg-frost-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-text"
+              />
+              <div className="flex items-center gap-2">
+                <Button variant="primary" type="submit" disabled={busy}>Save</Button>
+                <Button variant="ghost" type="button" onClick={() => setNoting(null)} disabled={busy}>Cancel</Button>
+                <span className="ml-auto text-[12px] text-secondary-text">{noting.length} of 2000</span>
+              </div>
+            </form>
+          ) : selected.description ? (
+            <div className="flex min-w-0 items-start gap-2">
+              <p className="line-clamp-3 text-[13px] leading-[18px] whitespace-pre-line text-primary-text/80 [overflow-wrap:anywhere]" title={selected.description}>{selected.description}</p>
+              <Button variant="ghost" aria-label="Edit description" className="-my-1 shrink-0 px-2" disabled={waiting} title={waiting ? "Send the waiting changes first" : undefined} onClick={() => setNoting(selected.description ?? "")}>
+                <Pencil size={14} aria-hidden="true" />
+              </Button>
+            </div>
+          ) : (
+            <Button variant="ghost" className="-ml-2 self-start" disabled={waiting} title={waiting ? "Send the waiting changes first" : undefined} onClick={() => setNoting("")}>Add a description</Button>
+          )}
         </div>
       </section>
 
@@ -363,6 +406,10 @@ export default function PlaylistEditor({ selectedId, onSelect, onNavigate }: Pro
         conflict={conflict}
         onUpload={() => void run("detail", "Uploading…", () => "Uploaded.", () => syncUploadPlaylist(selected.id))}
       />
+
+      {selected.remoteId && !needsUpload(selected) && (
+        <ShareSection localId={selected.id} signedIn={syncState !== "signedOut"} onSignIn={() => onNavigate("login")} />
+      )}
 
       <OfflinePlaylist key={selected.id} playlist={selected} />
 
@@ -396,9 +443,6 @@ export default function PlaylistEditor({ selectedId, onSelect, onNavigate }: Pro
 
       {syncState === "offline" && (
         <StatusNote tone="amber">No connection to the server. Changes stay on this device until it returns.</StatusNote>
-      )}
-      {selected.remoteId && !needsUpload(selected) && (
-        <ShareSection localId={selected.id} signedIn={syncState !== "signedOut"} onSignIn={() => onNavigate("login")} />
       )}
       {syncState === "signedOut" && needsUpload(selected) && (
         <StatusNote tone="blue">
@@ -460,12 +504,12 @@ export default function PlaylistEditor({ selectedId, onSelect, onNavigate }: Pro
             <Button variant="ghost" disabled={busy} onClick={() => setConfirmDelete(false)}>Cancel</Button>
           </>
         ) : (
-          <Button variant="ghost" disabled={busy || !!selected.remoteId} title={selected.remoteId ? "An uploaded playlist cannot be deleted yet" : undefined} onClick={() => setConfirmDelete(true)}>
+          <Button variant="ghost" disabled={busy} onClick={() => setConfirmDelete(true)}>
             <Trash2 size={14} aria-hidden="true" />Delete playlist
           </Button>
         )}
         <p className="text-[13px] leading-[18px] text-secondary-text">
-          {selected.remoteId ? "Uploaded playlists cannot be deleted, renamed or reordered yet." : "Deleting removes this device's copy."}
+          {selected.remoteId ? "Uploaded playlists cannot be renamed or reordered yet. Deleting removes it here and from your account." : "Deleting removes this device's copy."}
         </p>
       </div>
     </div>
@@ -522,8 +566,8 @@ export default function PlaylistEditor({ selectedId, onSelect, onNavigate }: Pro
     <Screen id="editor-title" title="Playlist Editor" caption="Playlists are saved on this device first, then uploaded when you choose.">
       <div className="grid grid-cols-1 gap-8 min-[1100px]:grid-cols-[320px_minmax(0,1fr)]">
         <div className={cx("flex min-w-0 flex-col gap-5", !showList && "max-[1099px]:hidden")}>
-          {createForm}
           {importForm}
+          {createForm}
           {body}
         </div>
         <div className="min-w-0">
