@@ -27,6 +27,7 @@ import { LoginGate } from "../../features/accounts/LoginGate";
 import LoginPage from "../../features/accounts/LoginPage";
 import SettingsScreen from "../../features/settings/SettingsScreen";
 import StatsScreen from "../../features/stats/StatsScreen";
+import ReplayScreen from "../../features/replay/ReplayScreen";
 import SyncPanel from "../../features/sync/SyncPanel";
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
@@ -213,6 +214,7 @@ export default function AppShell() {
                     {view === "login" && <LoginPage />}
                     {view === "settings" && <SettingsScreen />}
                     {view === "stats" && <StatsScreen />}
+                    {view === "replay" && <ReplayScreen />}
                     {view === "sync" && <div className="lx-scope"><SyncPanel /></div>}
                   </ViewFrame>
                 </AnimatePresence>
