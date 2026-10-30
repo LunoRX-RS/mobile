@@ -313,7 +313,8 @@ async fn session(
             queue = context.iter().skip(1).cloned().collect();
             queue.insert(0, context[0].clone());
         }
-        publish_queue(&state, &queue);
+        let mut published: Vec<String> = Vec::new();
+        publish(&state, &queue, &mut published);
         let repeat_one = repeat == "one";
         if repeat_one {
             // The same track again: it is already cached, so this only keeps the file alive until Load takes it.
@@ -349,12 +350,16 @@ async fn session(
                 break;
             }
         }
+        // The list may have been edited while songs were being prepared (an edit wakes the session): plan again from it.
+        if queue_edited(&state, &published) {
+            continue 'outer;
+        }
         let (next, _file) = match prepared {
             Some((skipped, track, file)) => {
                 // The ones passed over could not be prepared and are dropped from the list.
                 queue.drain(..skipped);
                 if skipped > 0 {
-                    publish_queue(&state, &queue);
+                    publish(&state, &queue, &mut published);
                 }
                 (track, file)
             }
@@ -386,6 +391,10 @@ async fn session(
             if mode(&state) != (repeat, radio_mode) {
                 continue 'outer;
             }
+            // The listener edited the up-next list: the song prepared for the end of this one may no longer be next.
+            if queue_edited(&state, &published) {
+                continue 'outer;
+            }
             let mut player = engine.lock().await;
             let errored = player.state() == PlaybackState::Error;
             if errored {
@@ -402,7 +411,7 @@ async fn session(
                     if !repeat_one {
                         queue.remove(0);
                     }
-                    publish_queue(&state, &queue);
+                    publish(&state, &queue, &mut published);
                     break;
                 }
                 Advance::Stalled => {
@@ -412,7 +421,7 @@ async fn session(
                     if !repeat_one {
                         queue.remove(0);
                     }
-                    publish_queue(&state, &queue);
+                    publish(&state, &queue, &mut published);
                     failures = failures.saturating_add(1);
                     retry_pause(&engine, failures, || mode(&state) != (repeat, radio_mode)).await;
                     continue 'outer;
@@ -425,7 +434,7 @@ async fn session(
                     // gets a turn, after a pause that grows while failures keep coming.
                     failures = failures.saturating_add(1);
                     queue.retain(|t| t.id != next.id);
-                    publish_queue(&state, &queue);
+                    publish(&state, &queue, &mut published);
                     status(&state, "finding", None);
                     retry_pause(&engine, failures, || mode(&state) != (repeat, radio_mode)).await;
                     continue 'outer;
@@ -530,6 +539,23 @@ fn publish_queue(state: &Status, queue: &[OfflineTrack]) {
     if let Ok(mut status) = state.lock() {
         status.queue = queue.to_vec();
     }
+}
+/// Publishes `queue` and remembers what was published, so a later edit by the listener can be told apart.
+fn publish(state: &Status, queue: &[OfflineTrack], published: &mut Vec<String>) {
+    publish_queue(state, queue);
+    *published = queue.iter().map(|t| t.id.clone()).collect();
+}
+/// True when the up-next list is no longer what the session last published: the listener edited it (or more songs
+/// were added) meanwhile. The session then plans again from the list as it is, instead of overwriting it with its own
+/// older copy.
+fn queue_edited(state: &Status, published: &[String]) -> bool {
+    state
+        .lock()
+        .map(|s| {
+            s.queue.len() != published.len()
+                || s.queue.iter().zip(published).any(|(t, id)| &t.id != id)
+        })
+        .unwrap_or(false)
 }
 fn append(
     queue: &mut Vec<OfflineTrack>,
@@ -1025,6 +1051,22 @@ mod tests {
         let started = Instant::now();
         retry_pause(&engine, 1, || false).await;
         assert!(started.elapsed() >= Duration::from_millis(950));
+    }
+    #[test]
+    fn an_edit_of_the_up_next_list_is_told_from_what_the_session_published() {
+        let state: Status = Default::default();
+        let mut published = Vec::new();
+        let queue = vec![track("aaaaaaaaaaa"), track("bbbbbbbbbbb")];
+        publish(&state, &queue, &mut published);
+        assert!(!queue_edited(&state, &published));
+        assert!(edit_queue(&state, QueueEdit::Next(track("ccccccccccc"))));
+        assert!(queue_edited(&state, &published));
+        // Planning again publishes the list as it is, and that is the new baseline.
+        let now = state.lock().unwrap().queue.clone();
+        publish(&state, &now, &mut published);
+        assert!(!queue_edited(&state, &published));
+        assert!(edit_queue(&state, QueueEdit::Remove("ccccccccccc".into())));
+        assert!(queue_edited(&state, &published));
     }
     #[test]
     fn retries_slow_down_and_stop_at_the_cap() {
