@@ -71,6 +71,7 @@ fn main() {
             "youtube_connection_status",
             "youtube_import",
             "youtube_import_playlist_from_url",
+            "podcast_browse",
             "youtube_disconnect",
             "youtube_like_push_get",
             "youtube_like_push_set",

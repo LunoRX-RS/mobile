@@ -9,6 +9,7 @@ import {
   Cloud,
   Compass,
   Heart,
+  Mic,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -102,6 +103,7 @@ const NAV: NavDef[] = [
   { view: "home", label: "Listen Now", Icon: CirclePlay },
   { view: "search", label: "Search", Icon: Search },
   { view: "explore", label: "Explore", Icon: Compass },
+  { view: "podcasts", label: "Podcasts", Icon: Mic },
   { view: "replay", label: "Replay", Icon: Sparkles },
 ];
 

@@ -27,15 +27,28 @@ Three honest categories:
 
 **Share deep links — re-apply after regenerating `gen/`.** The iOS `lunorx` URL scheme needs no manual step on device builds: `bundle.iOS.infoPlist: "Info.ios.plist"` in `tauri.conf.json` merges `src-tauri/Info.ios.plist` (background audio, ATS, `CFBundleURLTypes`) into the generated Info.plist — edits made by hand to `gen/apple/lunorx_iOS/Info.plist` are overwritten. The merge applies to device archives only: a `--target aarch64-sim` product ships **without** those keys, so `simctl openurl lunorx://…` fails (LSApplicationWorkspace error 115) and background audio / local-ATS are missing in the simulator. `scripts/ios-build.sh` now re-inserts the three keys into the sim .app and re-signs ad-hoc after the build. `src-tauri/gen/` is otherwise gitignored: after `tauri android init` re-add the two `MainActivity` intent-filters (`lunorx://share`, and `autoVerify` https for `play.lunorx.xyz` with `/s/ /embed/ /og/` prefixes) to `gen/android/app/src/main/AndroidManifest.xml` — the file's comment carries the snippet. The `plugins.deep-link.mobile` block (hosts for `play.lunorx.xyz`) is deliberately **not** in `tauri.conf.json` yet: while it is set, the iOS archive injects the Associated Domains entitlement and fails (`Provisioning profile … doesn't include the Associated Domains capability` / `No Accounts`). Add it back once the App ID is provisioned for Associated Domains **and** `play.lunorx.xyz` serves `/.well-known/apple-app-site-claim` (iOS) and `/.well-known/assetlinks.json` (Android). Until then taps on `play.lunorx.xyz` links do not open the app by themselves; `lunorx://` links and pasting a link or token into Search or the playlist editor's Import-from-link still open the Shared screen.
 
+### Podcasts (mobile only)
+
+The desktop app has no podcast view. `core/podcasts.rs` + `commands/podcasts.rs::podcast_browse` search YouTube videos for a show name or topic (" podcast" is appended when missing) and keep uploads of at least 20 minutes that are not live or Shorts. Results are ordinary YouTube hits, so play, queue and add-to-playlist work as for songs; audio over 12 MiB (`cache::STREAM_ABOVE`) is not downloaded first: `DiskCache::playable` resolves once and `AudioProxy::stream` serves the player's byte ranges from the media host as it reads, forwarding bytes as they arrive and resuming from the last byte sent when a body drops. Songs are still cached whole and played from disk. The autoplay prefetch uses the same call, so it no longer downloads (or drops) the next episode. The Podcasts screen (More menu on phones, sidebar on tablets) has suggestion chips, a "Follow" list kept in the web view's local storage (per device, not synced) and "More episodes" paging. There is no show page, subscription feed or new-episode notice: YouTube's library exposes none, so a show is only as complete as the search that finds it.
+
 ## The `lunor-native` plugin
 
 `src-tauri/plugins/lunor-native/` is a Tauri plugin with no webview commands: only Rust can call it, so remote content cannot reach native audio or secrets. Swift (`ios/Sources/LunorNativePlugin.swift`) and Kotlin (`android/.../LunorNativePlugin.kt`) implement one JSON contract:
 
-`load {url}` · `play` · `pause` · `stop` · `seek {positionMs}` · `setVolume {volume}` · `poll` → `{status, positionMs, durationMs, remote[]}` · `nowPlaying {...}` · `signIn` → `{cookies[]}` · Android only: `secretGet/Set/Delete`.
+`load {url}` · `pageLoad {videoId}` (Android only; iOS rejects it) · `play` · `pause` · `stop` · `seek {positionMs}` · `setVolume {volume}` · `poll` → `{status, positionMs, durationMs, remote[]}` · `nowPlaying {...}` · `signIn` → `{cookies[]}` · Android only: `secretGet/Set/Delete`.
 
 `poll` is read by `core/playback/mobile.rs::watch` every 250 ms while a track is loaded (1 s when idle). The platform latches `ended`/`failed`, so each transition is seen once.
 
 Only `file://` URLs (the disk cache) and `http://127.0.0.1` (loopback proxy) are accepted as sources.
+
+### YouTube page fallback (Android)
+
+When the direct stream is refused (`Failed` or `MediaRefused`), `core/playback/routing.rs::RoutingHost` asks the plugin to `pageLoad` the track: `PagePlayer.kt` opens `https://www.youtube.com/watch?v=<id>` in a hidden, attached 1x1 web view (no JavaScript bridge, navigation limited to the sign-in host rules, `m.youtube.com` included) and reads the page's own player state from its title. This is the same fallback the desktop app has. While the page holds the track, `play/pause/seek/setVolume/stop/poll` act on it; every new load starts from the direct player again. If the page fails too, the direct refusal is the error shown. Not done: sound effects in the page, the lock-screen/notification card (the media session follows ExoPlayer, not the page), and playback with the screen off is not verified. iOS has no page player.
+
+### Launcher icon
+
+`src-tauri/gen/` is git-ignored and `tauri android init` writes Tauri's default icon there once. `scripts/sync-android-icons.sh` (run by `mobile-env.sh` before every command) copies `src-tauri/icons/android/*` into it, so each APK carries the project icon. A launcher caches icons; if the old one stays, uninstall the app once (this clears sign-in and cache).
+
 
 ## iOS audio format
 

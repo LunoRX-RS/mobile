@@ -201,6 +201,37 @@ pub(super) fn bind_to_signed_family(
     }
 }
 
+/// How the address this device sends from compares with the one a link was issued for, for the log only: the source
+/// address the system picks for `remote` is read from a connected UDP socket, which sends nothing.
+pub(super) async fn source_comparison(
+    url: &reqwest::Url,
+    remote: Option<std::net::SocketAddr>,
+) -> &'static str {
+    use std::net::IpAddr;
+    let (Some(issued), Some(remote)) = (signed_ip(url), remote) else {
+        return "unknown";
+    };
+    let wildcard: std::net::SocketAddr = if remote.is_ipv6() {
+        (std::net::Ipv6Addr::UNSPECIFIED, 0).into()
+    } else {
+        (std::net::Ipv4Addr::UNSPECIFIED, 0).into()
+    };
+    let Ok(socket) = tokio::net::UdpSocket::bind(wildcard).await else {
+        return "unknown";
+    };
+    if socket.connect(remote).await.is_err() {
+        return "unknown";
+    }
+    match (issued, socket.local_addr().map(|a| a.ip())) {
+        (a, Ok(b)) if a == b => "same address",
+        (IpAddr::V6(a), Ok(IpAddr::V6(b))) if a.segments()[..4] == b.segments()[..4] => {
+            "same /64, other address"
+        }
+        (IpAddr::V6(_), Ok(IpAddr::V6(_))) => "different /64",
+        _ => "different family",
+    }
+}
+
 /// "v4", "v6" or "-" for the log; never the address itself.
 pub(super) fn family_name(address: Option<std::net::IpAddr>) -> &'static str {
     match address {
@@ -226,6 +257,27 @@ pub(super) fn checked_url(raw: &str) -> Result<String, PlaybackErrorKind> {
     }
     Ok(url.into())
 }
+
+/// Playback logs may name a source class, but never retain a signed stream URL or local cache path.
+#[cfg(any(mobile, test))]
+pub(super) fn media_source_label(raw: &str) -> &'static str {
+    let Ok(url) = reqwest::Url::parse(raw) else {
+        return "invalid";
+    };
+    match url.scheme() {
+        "file" if url.host_str().is_none() => "local-cache",
+        "http" if url.host_str() == Some("127.0.0.1") => "loopback-proxy",
+        "https"
+            if url
+                .host_str()
+                .is_some_and(|host| host.ends_with(".googlevideo.com")) =>
+        {
+            "googlevideo"
+        }
+        _ => "other",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -465,5 +517,25 @@ mod tests {
         ] {
             assert!(checked_url(url).is_err(), "{url}");
         }
+    }
+
+    #[test]
+    fn media_source_labels_do_not_retain_signed_urls_or_local_paths() {
+        assert_eq!(
+            media_source_label(
+                "https://rr1.googlevideo.com/videoplayback?ip=203.0.113.1&sig=secret"
+            ),
+            "googlevideo"
+        );
+        assert_eq!(
+            media_source_label("file:///data/user/0/io.lunorx.mobile/cache/private.audio"),
+            "local-cache"
+        );
+        assert_eq!(
+            media_source_label("http://127.0.0.1:18080/private-path"),
+            "loopback-proxy"
+        );
+        assert_eq!(media_source_label("https://example.test/private"), "other");
+        assert_eq!(media_source_label("not a URL"), "invalid");
     }
 }

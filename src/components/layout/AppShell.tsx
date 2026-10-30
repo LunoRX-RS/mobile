@@ -27,6 +27,7 @@ import { LoginGate } from "../../features/accounts/LoginGate";
 import LoginPage from "../../features/accounts/LoginPage";
 import SettingsScreen from "../../features/settings/SettingsScreen";
 import ReplayScreen from "../../features/replay/ReplayScreen";
+import PodcastsScreen from "../../features/podcasts/PodcastsScreen";
 import SharedScreen from "../../features/shared/SharedScreen";
 import SyncPanel from "../../features/sync/SyncPanel";
 import { SHARE_OPEN_EVENT, sharedLinkTake } from "../../services/tauri/share";
@@ -231,6 +232,7 @@ export default function AppShell() {
                     {view === "login" && <LoginPage />}
                     {view === "settings" && <SettingsScreen />}
                     {view === "replay" && <ReplayScreen />}
+                    {view === "podcasts" && <PodcastsScreen />}
                     {view === "shared" && <SharedScreen />}
                     {view === "sync" && <div className="lx-scope"><SyncPanel /></div>}
                   </ViewFrame>

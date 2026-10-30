@@ -35,6 +35,11 @@ class LoadArgs {
 }
 
 @InvokeArg
+class PageLoadArgs {
+    lateinit var videoId: String
+}
+
+@InvokeArg
 class ImportArgs {
     var state: String = "running"
 }
@@ -74,6 +79,7 @@ class SecretArgs {
 class LunorNativePlugin(private val activity: Activity) : Plugin(activity) {
     private val main = Handler(Looper.getMainLooper())
     private val secrets by lazy { SecretStore(activity) }
+    private val page by lazy { PagePlayer(activity, main) }
     private var pendingLoad: Invoke? = null
     private var pendingPlay: Invoke? = null
 
@@ -116,21 +122,34 @@ class LunorNativePlugin(private val activity: Activity) : Plugin(activity) {
      * of the two. The page loads after this hook runs, so the values are written again a little later.
      */
     private fun publishInsets(webView: android.webkit.WebView) {
-        var script = ""
-        fun push() = webView.evaluateJavascript(script, null)
-        ViewCompat.setOnApplyWindowInsetsListener(webView) { _, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+        val types = WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+        var own: androidx.core.graphics.Insets = androidx.core.graphics.Insets.NONE
+        fun push() {
             val density = webView.resources.displayMetrics.density
+            // The insets this view is handed can arrive consumed by a parent (all zero). The window's own insets cannot,
+            // and the status bar height is the floor: the page always draws under it.
+            val root = ViewCompat.getRootWindowInsets(webView)?.getInsets(types)
+                ?: androidx.core.graphics.Insets.NONE
+            val statusId = webView.resources.getIdentifier("status_bar_height", "dimen", "android")
+            val status = if (statusId > 0) webView.resources.getDimensionPixelSize(statusId) else 0
             fun css(px: Int) = "${px / density}px"
-            script = "(function(){var s=document.documentElement.style;" +
-                "s.setProperty('--sai-top','${css(bars.top)}');s.setProperty('--sai-bottom','${css(bars.bottom)}');" +
-                "s.setProperty('--sai-left','${css(bars.left)}');s.setProperty('--sai-right','${css(bars.right)}');})()"
+            val script = "(function(){var s=document.documentElement.style;" +
+                "s.setProperty('--sai-top','${css(maxOf(own.top, root.top, status))}');" +
+                "s.setProperty('--sai-bottom','${css(maxOf(own.bottom, root.bottom))}');" +
+                "s.setProperty('--sai-left','${css(maxOf(own.left, root.left))}');" +
+                "s.setProperty('--sai-right','${css(maxOf(own.right, root.right))}');})()"
+            webView.evaluateJavascript(script, null)
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(webView) { _, insets ->
+            own = insets.getInsets(types)
             push()
             // A cold start can take longer than a few seconds to load the page, and a navigation drops the values.
             for (i in 1..60) main.postDelayed({ push() }, i * 500L)
             insets
         }
         ViewCompat.requestApplyInsets(webView)
+        // Some devices never call the listener before the page is up; the first pushes do not wait for it.
+        for (i in 0..8) main.postDelayed({ push() }, i * 250L)
     }
 
     private fun onMain(invoke: Invoke, block: () -> Unit) {
@@ -182,6 +201,7 @@ class LunorNativePlugin(private val activity: Activity) : Plugin(activity) {
             return
         }
         onMain(invoke) {
+            page.destroy()
             cancelPending("superseded")
             Audio.ended = false
             Audio.failed = false
@@ -194,9 +214,38 @@ class LunorNativePlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    /**
+     * Plays a YouTube video through its own page when the direct stream was refused. Core checks the id; it is checked
+     * again here, and the address is built here, so no caller supplies a URL. While the page holds the track, play,
+     * pause, seek, setVolume, stop and poll act on it.
+     */
+    @Command
+    fun pageLoad(invoke: Invoke) {
+        val args = invoke.parseArgs(PageLoadArgs::class.java)
+        if (!Regex("[A-Za-z0-9_-]{11}").matches(args.videoId)) {
+            invoke.reject("id not allowed")
+            return
+        }
+        onMain(invoke) {
+            cancelPending("superseded")
+            val player = Audio.player(activity)
+            player.stop()
+            player.clearMediaItems()
+            Audio.ended = false
+            Audio.failed = false
+            Audio.loaded = false
+            page.load(args.videoId, invoke)
+        }
+    }
+
     @Command
     fun play(invoke: Invoke) {
         onMain(invoke) {
+            if (page.active) {
+                page.play()
+                invoke.resolve()
+                return@onMain
+            }
             val player = Audio.player(activity)
             if (!Audio.loaded || Audio.failed) {
                 invoke.reject("nothing loaded")
@@ -213,6 +262,11 @@ class LunorNativePlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun pause(invoke: Invoke) {
         onMain(invoke) {
+            if (page.active) {
+                page.pause()
+                invoke.resolve()
+                return@onMain
+            }
             pendingPlay?.reject("superseded")
             pendingPlay = null
             Audio.player(activity).pause()
@@ -223,6 +277,7 @@ class LunorNativePlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun stop(invoke: Invoke) {
         onMain(invoke) {
+            page.destroy()
             cancelPending("stopped")
             val player = Audio.player(activity)
             player.stop()
@@ -238,7 +293,10 @@ class LunorNativePlugin(private val activity: Activity) : Plugin(activity) {
     fun seek(invoke: Invoke) {
         val args = invoke.parseArgs(SeekArgs::class.java)
         onMain(invoke) {
-            if (!Audio.loaded) {
+            if (page.active) {
+                page.seek(args.positionMs.toLong().coerceAtLeast(0))
+                invoke.resolve()
+            } else if (!Audio.loaded) {
                 invoke.reject("nothing loaded")
             } else {
                 // ExoPlayer.seekTo is applied synchronously from the caller's view; position reads back at once.
@@ -252,7 +310,9 @@ class LunorNativePlugin(private val activity: Activity) : Plugin(activity) {
     fun setVolume(invoke: Invoke) {
         val args = invoke.parseArgs(VolumeArgs::class.java)
         onMain(invoke) {
-            Audio.player(activity).volume = (args.volume / 100.0).coerceIn(0.0, 1.0).toFloat()
+            val percent = args.volume.coerceIn(0.0, 100.0)
+            if (page.active) page.volume(percent.toInt())
+            Audio.player(activity).volume = (percent / 100.0).toFloat()
             invoke.resolve()
         }
     }
@@ -267,6 +327,15 @@ class LunorNativePlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun poll(invoke: Invoke) {
         onMain(invoke) {
+            if (page.active) {
+                val reply = page.poll()
+                val events = JSArray()
+                for ((kind, positionMs) in Audio.drain()) {
+                    events.put(JSObject().put("kind", kind).put("positionMs", positionMs))
+                }
+                invoke.resolve(reply.put("remote", events))
+                return@onMain
+            }
             val player = Audio.player(activity)
             val status = when {
                 !Audio.loaded -> "idle"

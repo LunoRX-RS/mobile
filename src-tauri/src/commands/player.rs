@@ -141,9 +141,23 @@ impl PlayerState {
                 let host = NativeHost::with_yt(app.clone(), yt, reports);
                 host.map(|host| host.with_cache(cache))
             });
+        // On a phone the page player takes a load the direct stream refuses (see `core::playback::routing`).
+        #[cfg(mobile)]
+        let native = native.map(|host| {
+            let page = host.page_host();
+            let audio = host.audio.clone();
+            (
+                crate::core::playback::routing::RoutingHost::new(host, page),
+                audio,
+            )
+        });
+        #[cfg(desktop)]
+        let native = native.map(|host| {
+            let audio = host.audio.clone();
+            (host, audio)
+        });
         let state = match native {
-            Ok(host) => {
-                let audio = host.audio.clone();
+            Ok((host, audio)) => {
                 let mut registry = ProviderRegistry::new();
                 let caps = ProviderCapabilities {
                     playback: CapabilityStatus::Supported,
@@ -176,11 +190,39 @@ impl PlayerState {
             // The play being timed: its id and when listening time was last added.
             let mut listening: Option<(String, std::time::Instant)> = None;
             let mut last_flush = std::time::Instant::now();
+            #[cfg(mobile)]
+            let mut recovery = Recovery::default();
             while let Some(report) = receiver.recv().await {
                 let state = app.state::<PlayerState>();
                 let mut engine = state.engine.lock().await;
                 if report.revision != engine.revision() {
                     continue;
+                }
+                // A stream that dies mid-track (an expired link, a cut connection, a short file) is loaded again from
+                // where it stopped before the user ever sees an error.
+                #[cfg(mobile)]
+                if let Some(track) = engine.active_track().cloned() {
+                    if recovery.id != track.provider_track_id
+                        || (engine.state() == PlaybackState::Playing
+                            && report.position_ms > recovery.at_ms + RECOVERY_RESET_MS)
+                    {
+                        recovery = Recovery {
+                            id: track.provider_track_id.clone(),
+                            ..Recovery::default()
+                        };
+                    }
+                    if matches!(report.event, Some(PlayerEvent::Failed))
+                        && recovery.attempts < MAX_RECOVERIES
+                    {
+                        recovery.attempts += 1;
+                        recovery.at_ms = report.position_ms;
+                        drop(engine);
+                        let (app, position_ms) = (app.clone(), report.position_ms);
+                        tauri::async_runtime::spawn(async move {
+                            recover(&app, track, position_ms).await;
+                        });
+                        continue;
+                    }
                 }
                 if let Some(event) = report.event {
                     let before = snapshot(&engine);
@@ -851,6 +893,39 @@ pub(crate) async fn skip(app: &AppHandle, forward: bool) {
         {
             let _ = finish(app, dispatch(&state, PlaybackCommand::Play).await);
         }
+    }
+}
+
+/// How often one track is loaded again after the player reports a failure, before the failure is shown.
+#[cfg(mobile)]
+const MAX_RECOVERIES: u8 = 2;
+/// Playing this much further than the last failure counts as healthy again, so the next failure gets fresh attempts.
+#[cfg(mobile)]
+const RECOVERY_RESET_MS: u64 = 20_000;
+
+#[cfg(mobile)]
+#[derive(Default)]
+struct Recovery {
+    id: String,
+    attempts: u8,
+    at_ms: u64,
+}
+
+/// Loads the track again (which resolves a fresh link and may use the page player) and resumes from `position_ms`.
+/// If the load is refused, its error is published like any other.
+#[cfg(mobile)]
+async fn recover(app: &AppHandle, track: TrackReference, position_ms: u64) {
+    let state = app.state::<PlayerState>();
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let ready = load_track(app, &state, track, true, false, Vec::new())
+        .await
+        .is_ok()
+        && finish(app, dispatch(&state, PlaybackCommand::Play).await).is_ok();
+    if ready && position_ms > 2_000 {
+        let _ = finish(
+            app,
+            dispatch(&state, PlaybackCommand::Seek { position_ms }).await,
+        );
     }
 }
 

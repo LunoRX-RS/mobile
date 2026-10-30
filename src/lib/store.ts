@@ -18,6 +18,7 @@ export type View =
   | "settings"
   | "sync"
   | "replay"
+  | "podcasts"
   | "shared"
   | "artist"
   | "album";

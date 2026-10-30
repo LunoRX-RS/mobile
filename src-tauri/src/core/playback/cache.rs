@@ -24,7 +24,26 @@ use tokio::{
 };
 
 const MAX_TRACK: u64 = 64 * 1024 * 1024;
+/// A track larger than this is not downloaded before it plays: it is streamed from the media host as the player reads,
+/// so a long episode starts at once and no bandwidth goes to a file nobody asked to keep.
+pub const STREAM_ABOVE: u64 = 12 * 1024 * 1024;
 const DEFAULT_LIMIT: u64 = 2 * 1024 * 1024 * 1024;
+
+/// How a track reaches the player.
+pub enum Playable {
+    File(Arc<CachedFile>),
+    /// Too long to download first; served to the player straight from the media host.
+    Stream(ResolvedAudio),
+}
+
+fn resolve_error(kind: PlaybackErrorKind) -> CacheError {
+    match kind {
+        PlaybackErrorKind::HostRejected(HostRejectKind::VerificationRequired) => {
+            CacheError::VerificationRequired
+        }
+        _ => CacheError::Download,
+    }
+}
 
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -444,11 +463,49 @@ impl DiskCache {
         }
         Some(format!("data:image/jpeg;base64,{}", STANDARD.encode(bytes)))
     }
+    /// The file for `track`, downloading it first when it is not cached.
     pub async fn ensure(
+        &self,
+        yt: &Yt,
+        track: OfflineTrack,
+        q: AudioQuality,
+    ) -> Result<Arc<CachedFile>> {
+        self.ensure_with(yt, track, q, None).await
+    }
+    /// What the player should be given for `track` right now: the cached file, a freshly cached one for a normal song,
+    /// or, for audio longer than [`STREAM_ABOVE`], the resolved link to stream. One resolve serves all three.
+    pub async fn playable(
+        &self,
+        yt: &Yt,
+        track: OfflineTrack,
+        q: AudioQuality,
+    ) -> Result<Playable> {
+        if track.provider != "YouTube" || !valid_track(&track) {
+            return Err(CacheError::Validation);
+        }
+        if let Some(file) = self.get(&track.id, q)? {
+            return Ok(Playable::File(file));
+        }
+        let audio = extract::resolve_with_quality(yt, &track.id, q)
+            .await
+            .map_err(resolve_error)?;
+        if audio.size > STREAM_ABOVE {
+            stage_log!(
+                "[debug] cache playable: {} bytes, streaming instead of downloading",
+                audio.size
+            );
+            return Ok(Playable::Stream(audio));
+        }
+        self.ensure_with(yt, track, q, Some(audio))
+            .await
+            .map(Playable::File)
+    }
+    async fn ensure_with(
         &self,
         yt: &Yt,
         mut track: OfflineTrack,
         q: AudioQuality,
+        known: Option<ResolvedAudio>,
     ) -> Result<Arc<CachedFile>> {
         if track.provider != "YouTube" || !valid_track(&track) {
             return Err(CacheError::Validation);
@@ -477,14 +534,12 @@ impl DiskCache {
             return Ok(file);
         }
         let _permit = self.downloads.acquire().await.map_err(storage)?;
-        let audio = extract::resolve_with_quality(yt, &track.id, q)
-            .await
-            .map_err(|kind| match kind {
-                PlaybackErrorKind::HostRejected(HostRejectKind::VerificationRequired) => {
-                    CacheError::VerificationRequired
-                }
-                _ => CacheError::Download,
-            })?;
+        let audio = match known {
+            Some(audio) => audio,
+            None => extract::resolve_with_quality(yt, &track.id, q)
+                .await
+                .map_err(resolve_error)?,
+        };
         if audio.size > MAX_TRACK {
             stage_log!(
                 "[debug] cache ensure: {} bytes over the {} limit",
@@ -831,6 +886,16 @@ impl DiskCache {
     }
 }
 
+/// The parameter names of a stream link and the client it names (`c`), never any value that signs it.
+fn link_shape(url: &reqwest::Url) -> String {
+    let names: Vec<_> = url.query_pairs().map(|(k, _)| k.into_owned()).collect();
+    let client = url
+        .query_pairs()
+        .find(|(k, _)| k == "c")
+        .map_or("-".to_string(), |(_, v)| v.into_owned());
+    format!("c={client} params=[{}]", names.join(","))
+}
+
 async fn download(audio: &ResolvedAudio, path: &Path) -> Result<()> {
     let url = reqwest::Url::parse(&audio.url).map_err(|_| CacheError::Download)?;
     let client = extract::bind_to_signed_family(reqwest::Client::builder(), &url)
@@ -868,10 +933,18 @@ async fn download(audio: &ResolvedAudio, path: &Path) -> Result<()> {
         })?;
     if !response.status().is_success() {
         let status = response.status().as_u16();
+        let source = extract::source_comparison(response.url(), response.remote_addr()).await;
         stage_log!(
-            "[debug] download: http {status} (link issued for {}, connected over {})",
+            "[debug] download: http {status} (link issued for {}, connected over {}, sending from {source}, http {:?}, content-type {}, link {})",
             extract::family_name(extract::signed_ip(response.url())),
-            extract::family_name(response.remote_addr().map(|a| a.ip()))
+            extract::family_name(response.remote_addr().map(|a| a.ip())),
+            response.version(),
+            response
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("-"),
+            link_shape(response.url())
         );
         if matches!(status, 401 | 403 | 404 | 410) {
             return Err(CacheError::MediaRefused);

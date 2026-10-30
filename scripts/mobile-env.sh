@@ -29,4 +29,7 @@ fi
 # JVM's calendar is Buddhist (year 2569), so the APK step fails with a bare VerifyException. Pin the JVM to a Gregorian locale.
 export JAVA_TOOL_OPTIONS="-Duser.language=en -Duser.country=US ${JAVA_TOOL_OPTIONS:-}"
 
+# Android: the generated project is git-ignored and keeps Tauri's default launcher icon unless the project's is copied in.
+sh "$(dirname "$0")/sync-android-icons.sh"
+
 exec "$@"
