@@ -57,3 +57,11 @@ export function episodeTrack(e: EpisodeDto) {
     durationMs: e.durationMs,
   };
 }
+
+/** The long uploads (ten minutes or more) of a YouTube channel: talks, episodes and stories, not songs. */
+export function podcastChannel(channelId: string, name: string, continuation: string | null = null): Promise<PodcastPageDto> {
+  return invoke<PodcastPageDto>("podcast_channel", { channelId, name, continuation }).then((page) => {
+    prefetchCovers(page.hits, 12);
+    return page;
+  });
+}

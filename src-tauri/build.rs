@@ -74,6 +74,7 @@ fn main() {
             "podcast_browse",
             "podcast_shows",
             "podcast_episodes",
+            "podcast_channel",
             "youtube_disconnect",
             "youtube_like_push_get",
             "youtube_like_push_set",

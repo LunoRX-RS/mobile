@@ -93,3 +93,22 @@ pub async fn podcast_episodes(feed_url: String) -> Result<Vec<EpisodeDto>, IpcEr
         })
         .collect())
 }
+
+/// The talk uploads (ten minutes or longer) of a YouTube channel, for an artist page whose channel is a podcast or a
+/// storyteller rather than a musician. `name` names rows that do not name their channel.
+#[tauri::command]
+pub async fn podcast_channel(
+    state: tauri::State<'_, YouTubeState>,
+    channel_id: String,
+    name: String,
+    continuation: Option<String>,
+) -> Result<PodcastPageDto, IpcError> {
+    let yt = state.yt.clone().ok_or(IpcError::Internal)?;
+    match podcasts::channel_clips(&yt, &channel_id, &name, continuation.as_deref()).await {
+        Ok(page) => Ok(PodcastPageDto {
+            hits: page.hits.iter().map(SearchHitDto::from).collect(),
+            continuation: page.continuation,
+        }),
+        Err(error) => Err(failure(error)),
+    }
+}

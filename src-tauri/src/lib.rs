@@ -159,6 +159,7 @@ pub fn run() {
             commands::podcasts::podcast_browse,
             commands::podcasts::podcast_shows,
             commands::podcasts::podcast_episodes,
+            commands::podcasts::podcast_channel,
             commands::youtube::youtube_disconnect,
             commands::youtube::youtube_like_push_get,
             commands::youtube::youtube_like_push_set,
