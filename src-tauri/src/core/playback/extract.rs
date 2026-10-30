@@ -111,6 +111,9 @@ async fn player_select(
     aac_only: bool,
 ) -> Result<Resolved, PlayerError> {
     let mut script_refreshed = false;
+    // The music site refuses what is not music (a podcast episode answers "unavailable"). A signed-in listener's own
+    // session may be served by the main site instead, so that one more ask is made, once, and only when signed in.
+    let mut kind = ClientKind::WebMusic;
     loop {
         let script = yt.decipher().await;
         if script.is_none() {
@@ -121,7 +124,7 @@ async fn player_select(
             handle = handle.with_decipher(script.clone());
         }
         let options = ResolveOptions {
-            kind: ClientKind::WebMusic,
+            kind,
             authed: yt.signed_in(),
             quality: quality(quality_wish),
             signature_timestamp: script.as_ref().and_then(|s| s.signature_timestamp().ok()),
@@ -143,7 +146,28 @@ async fn player_select(
                 script_refreshed = true;
                 yt.forget_script();
             }
-            other => return other,
+            Err(PlayerError::Unavailable)
+                if matches!(kind, ClientKind::WebMusic) && yt.signed_in() =>
+            {
+                stage_log!(
+                    "[debug] resolve: music site says unavailable for {id}; asking the main site with the signed-in session"
+                );
+                kind = ClientKind::Web;
+            }
+            other => {
+                if let Err(error) = &other {
+                    stage_log!(
+                        "[debug] resolve: {} answered {error:?} for {id} (signed in: {})",
+                        if matches!(kind, ClientKind::Web) {
+                            "main site"
+                        } else {
+                            "music site"
+                        },
+                        yt.signed_in()
+                    );
+                }
+                return other;
+            }
         }
     }
 }
