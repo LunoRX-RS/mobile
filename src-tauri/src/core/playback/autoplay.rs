@@ -220,7 +220,9 @@ async fn session(
     'outer: loop {
         let current = engine.lock().await.active_track().cloned();
         let Some(current) = current else { return };
-        let (repeat, radio) = mode(&state);
+        let (repeat, radio_mode) = mode(&state);
+        // Related music is YouTube's; after an episode the queue holds only what the listener chose.
+        let radio = radio_mode && current.provider != ProviderId::Podcast;
         let seed = current.provider_track_id.clone();
         remember(&mut history, seed.clone());
         if let Ok(mut status) = state.lock() {
@@ -251,6 +253,11 @@ async fn session(
             let Some(track) = queue.first().cloned() else {
                 break;
             };
+            // An episode is read from its host as it plays: nothing to prepare ahead.
+            if track.provider == "Podcast" {
+                next = Some((track, None));
+                break;
+            }
             status(&state, "preparing", Some(track.title.clone()));
             // Keep the file alive until Load acquires it, including when cache quota is tight. A long episode is not
             // downloaded ahead: it is ready as soon as it resolves, and Load streams it.
@@ -275,12 +282,19 @@ async fn session(
             return;
         };
         status(&state, "ready", Some(next.title.clone()));
-        // Best effort, after readiness is published; never awaited.
-        super::track_info::prefetch_lyrics(&next.id, &next.title, &next.artists, next.duration_ms);
+        // Best effort, after readiness is published; never awaited. Lyrics are looked up by song, not by episode.
+        if next.provider != "Podcast" {
+            super::track_info::prefetch_lyrics(
+                &next.id,
+                &next.title,
+                &next.artists,
+                next.duration_ms,
+            );
+        }
         loop {
             reports.borrow_and_update();
             // The user changed repeat or autoplay while this track plays: plan the ending again.
-            if mode(&state) != (repeat, radio) {
+            if mode(&state) != (repeat, radio_mode) {
                 continue 'outer;
             }
             let mut player = engine.lock().await;
@@ -328,7 +342,11 @@ pub async fn load_more(state: &Status, yt: &Yt) -> usize {
         let Ok(s) = state.lock() else {
             return 0;
         };
-        if s.queue.is_empty() || s.queue.len() >= QUEUE_MAX {
+        // More-like-this is a YouTube radio; a queue of episodes has no such thing.
+        if s.queue.is_empty()
+            || s.queue.len() >= QUEUE_MAX
+            || s.queue.iter().any(|t| t.provider == "Podcast")
+        {
             return 0;
         }
         (
@@ -454,13 +472,17 @@ pub async fn related(
     queue
 }
 fn reference(next: &OfflineTrack) -> Result<TrackReference, ()> {
-    let mut track = TrackReference::new(
-        ProviderId::YouTube,
-        next.id.clone(),
-        format!("https://www.youtube.com/watch?v={}", next.id),
-        next.title.clone(),
-    )
-    .map_err(|_| ())?;
+    let (provider, url) = if next.provider == "Podcast" {
+        // An episode's id is the address of its audio.
+        (ProviderId::Podcast, next.id.clone())
+    } else {
+        (
+            ProviderId::YouTube,
+            format!("https://www.youtube.com/watch?v={}", next.id),
+        )
+    };
+    let mut track =
+        TrackReference::new(provider, next.id.clone(), url, next.title.clone()).map_err(|_| ())?;
     track.artists = next.artists.clone();
     track.artwork_url = next.artwork_url.clone();
     Ok(track)

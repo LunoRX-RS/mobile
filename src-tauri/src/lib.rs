@@ -157,6 +157,8 @@ pub fn run() {
             commands::youtube::youtube_import,
             commands::youtube_import::youtube_import_playlist_from_url,
             commands::podcasts::podcast_browse,
+            commands::podcasts::podcast_shows,
+            commands::podcasts::podcast_episodes,
             commands::youtube::youtube_disconnect,
             commands::youtube::youtube_like_push_get,
             commands::youtube::youtube_like_push_set,

@@ -64,6 +64,8 @@
     "allow-sync-register",
     "allow-youtube-import-playlist-from-url",
     "allow-podcast-browse",
+    "allow-podcast-shows",
+    "allow-podcast-episodes",
     "allow-shared-link-take",
     "allow-shared-playlist-get",
     "allow-shared-token-from-url",
