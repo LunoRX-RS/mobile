@@ -39,6 +39,11 @@ type Listing = {
 
 const IDLE: Listing = { text: "", hits: [], next: null, loading: false, more: false, message: "" };
 
+// The first page of a show seen a moment ago opens at once instead of asking YouTube again.
+const FRESH_MS = 5 * 60 * 1000;
+const recent = new Map<string, { at: number; hits: SearchHitDto[]; next: string | null }>();
+const keyOf = (text: string) => text.trim().toLowerCase();
+
 export default function PodcastsScreen() {
   const [input, setInput] = useState("");
   const [shows, setShows] = useState<string[]>([]);
@@ -50,6 +55,11 @@ export default function PodcastsScreen() {
 
   async function fill(text: string, token: string | null, first: boolean) {
     const mine = ++latest.current;
+    const seen = first ? recent.get(keyOf(text)) : undefined;
+    if (seen && Date.now() - seen.at < FRESH_MS) {
+      setList({ ...IDLE, text, hits: seen.hits, next: seen.next });
+      return;
+    }
     setList((l) => (first ? { ...IDLE, text, loading: true } : { ...l, more: true, message: "" }));
     let hits: SearchHitDto[] = [];
     let next = token;
@@ -66,6 +76,7 @@ export default function PodcastsScreen() {
       setList((l) => ({ ...l, loading: false, more: false, message: "Podcasts could not load. Check the connection and try again." }));
       return;
     }
+    if (first) recent.set(keyOf(text), { at: Date.now(), hits, next });
     setList((l) => ({
       text,
       hits: first ? hits : [...l.hits, ...hits.filter((h) => !l.hits.some((o) => o.providerTrackId === h.providerTrackId))],

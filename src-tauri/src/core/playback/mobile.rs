@@ -152,11 +152,12 @@ impl PlayerHost for NativeHost {
                         }
                         proxy.take();
                         self.file.lock().await.take();
-                        // A track the cache will not hold (a long podcast episode) is streamed through the loopback proxy.
-                        let cached = if let Some(cache) = &self.cache {
+                        // A song is cached whole and played from disk. A long episode is not downloaded first: its
+                        // bytes are fetched through the loopback proxy as the player reads, so it starts at once.
+                        let playable = if let Some(cache) = &self.cache {
                             stage_log!("[debug] mobile load: cache");
                             match cache
-                                .ensure(
+                                .playable(
                                     &self.yt,
                                     super::cache::OfflineTrack {
                                         provider: "YouTube".into(),
@@ -168,13 +169,7 @@ impl PlayerHost for NativeHost {
                                 )
                                 .await
                             {
-                                Ok(f) => Some(f),
-                                Err(super::cache::CacheError::TooLarge) => {
-                                    stage_log!(
-                                        "[debug] mobile load: too large to cache, streaming"
-                                    );
-                                    None
-                                }
+                                Ok(p) => Some(p),
                                 Err(e) => {
                                     stage_log!("[debug] mobile load: cache ensure failed: {:?}", e);
                                     use super::cache::CacheError;
@@ -196,44 +191,59 @@ impl PlayerHost for NativeHost {
                         } else {
                             None
                         };
-                        let url = if let Some(file) = cached {
-                            let url = reqwest::Url::from_file_path(&file.path)
-                                .map_err(|_| extract::failed())?
-                                .to_string();
-                            *self.file.lock().await = Some(file);
-                            url
-                        } else {
-                            stage_log!(
-                                "[debug] mobile load: resolving {}",
-                                track.provider_track_id
-                            );
-                            let audio = match extract::resolve_with_quality(
-                                &self.yt,
-                                &track.provider_track_id,
-                                settings.quality,
-                            )
-                            .await
-                            {
-                                Ok(a) => a,
-                                Err(e) => {
-                                    stage_log!("[debug] mobile load: resolve failed: {:?}", e);
-                                    return Err(e);
-                                }
-                            };
-                            stage_log!(
-                                "[debug] mobile load: resolved source={}",
-                                extract::media_source_label(&audio.url)
-                            );
-                            let next = match AudioProxy::start(audio).await {
-                                Ok(p) => p,
-                                Err(e) => {
+                        let url = match playable {
+                            Some(super::cache::Playable::File(file)) => {
+                                let url = reqwest::Url::from_file_path(&file.path)
+                                    .map_err(|_| extract::failed())?
+                                    .to_string();
+                                *self.file.lock().await = Some(file);
+                                url
+                            }
+                            Some(super::cache::Playable::Stream(audio)) => {
+                                stage_log!(
+                                    "[debug] mobile load: streaming source={}",
+                                    extract::media_source_label(&audio.url)
+                                );
+                                let next = AudioProxy::stream(audio).await.inspect_err(|e| {
                                     stage_log!("[debug] mobile load: proxy failed: {:?}", e);
-                                    return Err(e);
-                                }
-                            };
-                            let url = next.url.clone();
-                            *proxy = Some(next);
-                            url
+                                })?;
+                                let url = next.url.clone();
+                                *proxy = Some(next);
+                                url
+                            }
+                            None => {
+                                stage_log!(
+                                    "[debug] mobile load: resolving {}",
+                                    track.provider_track_id
+                                );
+                                let audio = match extract::resolve_with_quality(
+                                    &self.yt,
+                                    &track.provider_track_id,
+                                    settings.quality,
+                                )
+                                .await
+                                {
+                                    Ok(a) => a,
+                                    Err(e) => {
+                                        stage_log!("[debug] mobile load: resolve failed: {:?}", e);
+                                        return Err(e);
+                                    }
+                                };
+                                stage_log!(
+                                    "[debug] mobile load: resolved source={}",
+                                    extract::media_source_label(&audio.url)
+                                );
+                                let next = match AudioProxy::start(audio).await {
+                                    Ok(p) => p,
+                                    Err(e) => {
+                                        stage_log!("[debug] mobile load: proxy failed: {:?}", e);
+                                        return Err(e);
+                                    }
+                                };
+                                let url = next.url.clone();
+                                *proxy = Some(next);
+                                url
+                            }
                         };
                         stage_log!(
                             "[debug] mobile load: plugin load source={}",

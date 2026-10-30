@@ -252,13 +252,18 @@ async fn session(
                 break;
             };
             status(&state, "preparing", Some(track.title.clone()));
-            // Keep the file alive until Load acquires it, including when cache quota is tight.
-            if let Ok(Ok(file)) = tokio::time::timeout(
+            // Keep the file alive until Load acquires it, including when cache quota is tight. A long episode is not
+            // downloaded ahead: it is ready as soon as it resolves, and Load streams it.
+            if let Ok(Ok(playable)) = tokio::time::timeout(
                 Duration::from_secs(90),
-                cache.ensure(&yt, track.clone(), audio.settings().quality),
+                cache.playable(&yt, track.clone(), audio.settings().quality),
             )
             .await
             {
+                let file = match playable {
+                    super::cache::Playable::File(file) => Some(file),
+                    super::cache::Playable::Stream(_) => None,
+                };
                 next = Some((track, file));
                 break;
             }

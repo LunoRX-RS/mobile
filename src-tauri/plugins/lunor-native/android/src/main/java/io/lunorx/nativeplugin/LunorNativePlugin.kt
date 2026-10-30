@@ -122,21 +122,34 @@ class LunorNativePlugin(private val activity: Activity) : Plugin(activity) {
      * of the two. The page loads after this hook runs, so the values are written again a little later.
      */
     private fun publishInsets(webView: android.webkit.WebView) {
-        var script = ""
-        fun push() = webView.evaluateJavascript(script, null)
-        ViewCompat.setOnApplyWindowInsetsListener(webView) { _, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+        val types = WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+        var own: androidx.core.graphics.Insets = androidx.core.graphics.Insets.NONE
+        fun push() {
             val density = webView.resources.displayMetrics.density
+            // The insets this view is handed can arrive consumed by a parent (all zero). The window's own insets cannot,
+            // and the status bar height is the floor: the page always draws under it.
+            val root = ViewCompat.getRootWindowInsets(webView)?.getInsets(types)
+                ?: androidx.core.graphics.Insets.NONE
+            val statusId = webView.resources.getIdentifier("status_bar_height", "dimen", "android")
+            val status = if (statusId > 0) webView.resources.getDimensionPixelSize(statusId) else 0
             fun css(px: Int) = "${px / density}px"
-            script = "(function(){var s=document.documentElement.style;" +
-                "s.setProperty('--sai-top','${css(bars.top)}');s.setProperty('--sai-bottom','${css(bars.bottom)}');" +
-                "s.setProperty('--sai-left','${css(bars.left)}');s.setProperty('--sai-right','${css(bars.right)}');})()"
+            val script = "(function(){var s=document.documentElement.style;" +
+                "s.setProperty('--sai-top','${css(maxOf(own.top, root.top, status))}');" +
+                "s.setProperty('--sai-bottom','${css(maxOf(own.bottom, root.bottom))}');" +
+                "s.setProperty('--sai-left','${css(maxOf(own.left, root.left))}');" +
+                "s.setProperty('--sai-right','${css(maxOf(own.right, root.right))}');})()"
+            webView.evaluateJavascript(script, null)
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(webView) { _, insets ->
+            own = insets.getInsets(types)
             push()
             // A cold start can take longer than a few seconds to load the page, and a navigation drops the values.
             for (i in 1..60) main.postDelayed({ push() }, i * 500L)
             insets
         }
         ViewCompat.requestApplyInsets(webView)
+        // Some devices never call the listener before the page is up; the first pushes do not wait for it.
+        for (i in 0..8) main.postDelayed({ push() }, i * 250L)
     }
 
     private fun onMain(invoke: Invoke, block: () -> Unit) {
