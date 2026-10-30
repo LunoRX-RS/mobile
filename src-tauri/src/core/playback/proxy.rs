@@ -10,6 +10,12 @@ use tokio::{
 };
 
 const MAX_AUDIO_BYTES: u64 = 64 * 1024 * 1024;
+/// A longer track (a podcast episode) is not held in memory: the player's byte ranges are fetched from the media host
+/// as it reads, this many bytes at a time. Beyond this size nothing is served.
+const MAX_STREAMED_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+const STREAM_CHUNK: u64 = 2 * 1024 * 1024;
+/// The player stops reading while its buffer is full, so a write to it may wait far longer than a preloaded one.
+const STREAM_WRITE_TIMEOUT: Duration = Duration::from_secs(300);
 type StreamError = Box<dyn std::error::Error + Send + Sync>;
 pub struct AudioProxy {
     pub url: String,
@@ -48,8 +54,27 @@ impl AudioProxy {
             }))
             .build()
             .map_err(|_| failed())?;
-        if audio.size == 0 || audio.size > MAX_AUDIO_BYTES {
+        if audio.size == 0 || audio.size > MAX_STREAMED_BYTES {
             return Err(failed());
+        }
+        if audio.size > MAX_AUDIO_BYTES {
+            eprintln!("audio stream: bytes={}", audio.size);
+            let (client, audio) = (Arc::new(client), Arc::new(audio));
+            let task = tokio::spawn(async move {
+                let mut connections = JoinSet::new();
+                loop {
+                    tokio::select! {
+                        accepted = listener.accept() => {
+                            let Ok((socket, _)) = accepted else { break; };
+                            if connections.len() >= 4 { continue; }
+                            let (client, audio, path) = (client.clone(), audio.clone(), path.clone());
+                            connections.spawn(async move { let _ = serve_stream(socket, &client, &audio, &path).await; });
+                        }
+                        _ = connections.join_next(), if !connections.is_empty() => {}
+                    }
+                }
+            });
+            return Ok(Self { url, task });
         }
         // Never let the decoder start with a partial track that can fail mid-song.
         let audio = Arc::new(fetch_range(&client, &audio, 0, audio.size - 1).await?);
@@ -98,7 +123,11 @@ async fn write(socket: &mut (impl AsyncWrite + Unpin), bytes: &[u8]) -> io::Resu
     Ok(())
 }
 
-async fn serve(mut socket: TcpStream, audio: &[u8], path: &str) -> Result<(), StreamError> {
+/// The method and `Range` header of a valid request for `path`. Any other request is answered here and gives `None`.
+async fn read_request(
+    socket: &mut TcpStream,
+    path: &str,
+) -> Result<Option<(String, Option<String>)>, StreamError> {
     let mut header = Vec::new();
     timeout(Duration::from_secs(5), async {
         while !header.ends_with(b"\r\n\r\n") {
@@ -120,11 +149,11 @@ async fn serve(mut socket: TcpStream, audio: &[u8], path: &str) -> Result<(), St
         || request.next().is_some()
     {
         write(
-            &mut socket,
+            socket,
             b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
         )
         .await?;
-        return Ok(());
+        return Ok(None);
     }
     let mut range = None;
     for line in lines.filter(|line| !line.is_empty()) {
@@ -136,16 +165,25 @@ async fn serve(mut socket: TcpStream, audio: &[u8], path: &str) -> Result<(), St
             if range.is_some() {
                 return Err("duplicate range".into());
             }
-            range = Some(value.trim());
+            range = Some(value.trim().to_owned());
         }
     }
-    let Some((start, end)) = byte_range(range, audio.len() as u64) else {
+    Ok(Some((method.to_owned(), range)))
+}
+
+/// Answers the request's header and returns the span to send, or `None` when nothing follows (HEAD, 416).
+async fn write_header(
+    socket: &mut TcpStream,
+    method: &str,
+    range: Option<&str>,
+    size: u64,
+) -> Result<Option<(u64, u64)>, StreamError> {
+    let Some((start, end)) = byte_range(range, size) else {
         let header = format!(
-            "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */{}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-            audio.len()
+            "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */{size}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
         );
-        write(&mut socket, header.as_bytes()).await?;
-        return Ok(());
+        write(socket, header.as_bytes()).await?;
+        return Ok(None);
     };
     let status = if range.is_some() {
         "206 Partial Content"
@@ -153,10 +191,7 @@ async fn serve(mut socket: TcpStream, audio: &[u8], path: &str) -> Result<(), St
         "200 OK"
     };
     let content_range = if range.is_some() {
-        format!(
-            "Content-Range: bytes {start}-{end}/{}\r\n",
-            audio.len() as u64
-        )
+        format!("Content-Range: bytes {start}-{end}/{size}\r\n")
     } else {
         String::new()
     };
@@ -164,11 +199,47 @@ async fn serve(mut socket: TcpStream, audio: &[u8], path: &str) -> Result<(), St
         "HTTP/1.1 {status}\r\nContent-Type: application/octet-stream\r\nAccept-Ranges: bytes\r\nContent-Length: {}\r\n{content_range}Connection: close\r\n\r\n",
         end - start + 1
     );
-    write(&mut socket, header.as_bytes()).await?;
-    if method == "HEAD" {
+    write(socket, header.as_bytes()).await?;
+    Ok((method != "HEAD").then_some((start, end)))
+}
+
+async fn serve(mut socket: TcpStream, audio: &[u8], path: &str) -> Result<(), StreamError> {
+    let Some((method, range)) = read_request(&mut socket, path).await? else {
         return Ok(());
-    }
+    };
+    let Some((start, end)) =
+        write_header(&mut socket, &method, range.as_deref(), audio.len() as u64).await?
+    else {
+        return Ok(());
+    };
     write(&mut socket, &audio[start as usize..=end as usize]).await?;
+    Ok(())
+}
+
+/// Like `serve`, but the bytes come from the media host as they are sent, so a long episode needs no memory or wait.
+async fn serve_stream(
+    mut socket: TcpStream,
+    client: &reqwest::Client,
+    audio: &ResolvedAudio,
+    path: &str,
+) -> Result<(), StreamError> {
+    let Some((method, range)) = read_request(&mut socket, path).await? else {
+        return Ok(());
+    };
+    let Some((start, end)) =
+        write_header(&mut socket, &method, range.as_deref(), audio.size).await?
+    else {
+        return Ok(());
+    };
+    let mut next = start;
+    while next <= end {
+        let last = (next + STREAM_CHUNK - 1).min(end);
+        let bytes = fetch_range(client, audio, next, last)
+            .await
+            .map_err(|_| "media host refused a range")?;
+        timeout(STREAM_WRITE_TIMEOUT, socket.write_all(&bytes)).await??;
+        next = last + 1;
+    }
     Ok(())
 }
 
@@ -369,14 +440,103 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn oversized_preload_is_rejected_without_network() {
+    async fn a_file_beyond_the_streaming_limit_is_rejected_without_network() {
         assert!(
             AudioProxy::start(ResolvedAudio {
                 url: "https://rr1.googlevideo.com/unused".into(),
-                size: MAX_AUDIO_BYTES + 1
+                size: MAX_STREAMED_BYTES + 1
             })
             .await
             .is_err()
         );
+    }
+
+    /// A podcast-sized file is not preloaded: ranges are fetched from the media host as the player reads them.
+    #[tokio::test]
+    async fn a_long_file_streams_ranges_from_the_media_host() {
+        const SIZE: u64 = 100 * 1024 * 1024;
+        let byte = |n: u64| (n % 251) as u8;
+        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let origin = format!("http://{}/audio", listener.local_addr().unwrap());
+        let hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = hits.clone();
+        let upstream = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                tokio::spawn(async move {
+                    let mut header = Vec::new();
+                    while !header.ends_with(b"\r\n\r\n") {
+                        header.push(socket.read_u8().await.unwrap());
+                    }
+                    let text = String::from_utf8(header).unwrap().to_ascii_lowercase();
+                    let span = text.split("range: bytes=").nth(1).unwrap();
+                    let (start, rest) = span.split_once('-').unwrap();
+                    let last: u64 = rest.split("\r\n").next().unwrap().parse().unwrap();
+                    let start: u64 = start.parse().unwrap();
+                    let body: Vec<u8> = (start..=last).map(byte).collect();
+                    socket
+                        .write_all(
+                            format!(
+                                "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                                body.len()
+                            )
+                            .as_bytes(),
+                        )
+                        .await
+                        .unwrap();
+                    socket.write_all(&body).await.unwrap();
+                });
+            }
+        });
+        let proxy = AudioProxy::start(ResolvedAudio {
+            url: origin,
+            size: SIZE,
+        })
+        .await
+        .unwrap();
+        // Nothing is downloaded before the player asks.
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 0);
+        let client = reqwest::Client::new();
+        assert_eq!(
+            client.head(&proxy.url).send().await.unwrap().headers()["content-length"],
+            SIZE.to_string()
+        );
+        // A seek into the middle spans three upstream chunks.
+        let (from, to) = (70_000_000u64, 70_000_000 + 5_000_000);
+        let seek = client
+            .get(&proxy.url)
+            .header("Range", format!("bytes={from}-{to}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(seek.status(), 206);
+        let got = seek.bytes().await.unwrap();
+        let want: Vec<u8> = (from..=to).map(byte).collect();
+        assert_eq!(got.as_ref(), want.as_slice());
+        // An open-ended request reads to the end of the file.
+        let tail = client
+            .get(&proxy.url)
+            .header("Range", format!("bytes={}-", SIZE - 3_000_000))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(tail.headers()["content-length"], "3000000");
+        let got = tail.bytes().await.unwrap();
+        let want: Vec<u8> = ((SIZE - 3_000_000)..SIZE).map(byte).collect();
+        assert_eq!(got.as_ref(), want.as_slice());
+        assert_eq!(
+            client
+                .get(&proxy.url)
+                .header("Range", format!("bytes={SIZE}-"))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            416
+        );
+        upstream.abort();
     }
 }

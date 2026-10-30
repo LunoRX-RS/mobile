@@ -152,9 +152,10 @@ impl PlayerHost for NativeHost {
                         }
                         proxy.take();
                         self.file.lock().await.take();
-                        let url = if let Some(cache) = &self.cache {
+                        // A track the cache will not hold (a long podcast episode) is streamed through the loopback proxy.
+                        let cached = if let Some(cache) = &self.cache {
                             stage_log!("[debug] mobile load: cache");
-                            let file = match cache
+                            match cache
                                 .ensure(
                                     &self.yt,
                                     super::cache::OfflineTrack {
@@ -167,7 +168,13 @@ impl PlayerHost for NativeHost {
                                 )
                                 .await
                             {
-                                Ok(f) => f,
+                                Ok(f) => Some(f),
+                                Err(super::cache::CacheError::TooLarge) => {
+                                    stage_log!(
+                                        "[debug] mobile load: too large to cache, streaming"
+                                    );
+                                    None
+                                }
                                 Err(e) => {
                                     stage_log!("[debug] mobile load: cache ensure failed: {:?}", e);
                                     use super::cache::CacheError;
@@ -185,7 +192,11 @@ impl PlayerHost for NativeHost {
                                         _ => extract::failed(),
                                     });
                                 }
-                            };
+                            }
+                        } else {
+                            None
+                        };
+                        let url = if let Some(file) = cached {
                             let url = reqwest::Url::from_file_path(&file.path)
                                 .map_err(|_| extract::failed())?
                                 .to_string();
