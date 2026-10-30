@@ -16,6 +16,9 @@ mod mobile_protocol;
 pub mod native;
 pub mod presets;
 mod proxy;
+#[cfg_attr(desktop, allow(dead_code))]
+// the page fallback is wired on mobile only; built on desktop so its tests run in CI
+pub mod routing;
 pub mod state;
 pub mod track_info;
 

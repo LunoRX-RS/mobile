@@ -266,6 +266,12 @@ class LunorNativePlugin: Plugin {
     }
   }
 
+  /// The YouTube page fallback exists on Android only. Same command as the Kotlin plugin, so the contract matches;
+  /// core then reports the original refusal as it always did on iOS.
+  @objc public func pageLoad(_ invoke: Invoke) throws {
+    invoke.reject("page player not supported")
+  }
+
   @objc public func play(_ invoke: Invoke) throws {
     DispatchQueue.main.async {
       guard self.item != nil, !self.failed else {

@@ -141,9 +141,23 @@ impl PlayerState {
                 let host = NativeHost::with_yt(app.clone(), yt, reports);
                 host.map(|host| host.with_cache(cache))
             });
+        // On a phone the page player takes a load the direct stream refuses (see `core::playback::routing`).
+        #[cfg(mobile)]
+        let native = native.map(|host| {
+            let page = host.page_host();
+            let audio = host.audio.clone();
+            (
+                crate::core::playback::routing::RoutingHost::new(host, page),
+                audio,
+            )
+        });
+        #[cfg(desktop)]
+        let native = native.map(|host| {
+            let audio = host.audio.clone();
+            (host, audio)
+        });
         let state = match native {
-            Ok(host) => {
-                let audio = host.audio.clone();
+            Ok((host, audio)) => {
                 let mut registry = ProviderRegistry::new();
                 let caps = ProviderCapabilities {
                     playback: CapabilityStatus::Supported,

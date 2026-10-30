@@ -689,6 +689,16 @@ impl DiskCache {
     }
 }
 
+/// The parameter names of a stream link and the client it names (`c`), never any value that signs it.
+fn link_shape(url: &reqwest::Url) -> String {
+    let names: Vec<_> = url.query_pairs().map(|(k, _)| k.into_owned()).collect();
+    let client = url
+        .query_pairs()
+        .find(|(k, _)| k == "c")
+        .map_or("-".to_string(), |(_, v)| v.into_owned());
+    format!("c={client} params=[{}]", names.join(","))
+}
+
 async fn download(audio: &ResolvedAudio, path: &Path) -> Result<()> {
     let url = reqwest::Url::parse(&audio.url).map_err(|_| CacheError::Download)?;
     let client = extract::bind_to_signed_family(reqwest::Client::builder(), &url)
@@ -726,10 +736,18 @@ async fn download(audio: &ResolvedAudio, path: &Path) -> Result<()> {
         })?;
     if !response.status().is_success() {
         let status = response.status().as_u16();
+        let source = extract::source_comparison(response.url(), response.remote_addr()).await;
         stage_log!(
-            "[debug] download: http {status} (link issued for {}, connected over {})",
+            "[debug] download: http {status} (link issued for {}, connected over {}, sending from {source}, http {:?}, content-type {}, link {})",
             extract::family_name(extract::signed_ip(response.url())),
-            extract::family_name(response.remote_addr().map(|a| a.ip()))
+            extract::family_name(response.remote_addr().map(|a| a.ip())),
+            response.version(),
+            response
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("-"),
+            link_shape(response.url())
         );
         if matches!(status, 401 | 403 | 404 | 410) {
             return Err(CacheError::MediaRefused);

@@ -71,6 +71,14 @@ impl NativeHost {
         })
     }
 
+    /// The fallback that plays through the provider's own page, sharing this host's report revision.
+    pub fn page_host(&self) -> PageHost {
+        PageHost {
+            app: self.app.clone(),
+            revision: self.revision.clone(),
+        }
+    }
+
     async fn plugin(
         &self,
         command: &'static str,
@@ -85,11 +93,20 @@ async fn call(
     command: &'static str,
     payload: Value,
 ) -> Result<Value, PlaybackErrorKind> {
+    call_within(app, command, payload, COMMAND_TIMEOUT).await
+}
+
+async fn call_within(
+    app: &AppHandle<Wry>,
+    command: &'static str,
+    payload: Value,
+    limit: Duration,
+) -> Result<Value, PlaybackErrorKind> {
     let app = app.clone();
     let work = tauri::async_runtime::spawn_blocking(move || {
         app.lunor_native().call::<Value>(command, payload)
     });
-    match tokio::time::timeout(COMMAND_TIMEOUT, work).await {
+    match tokio::time::timeout(limit, work).await {
         Ok(Ok(Ok(value))) => {
             if command != "poll" {
                 stage_log!("[debug] plugin {} ok", command);
@@ -192,7 +209,10 @@ impl PlayerHost for NativeHost {
                                     return Err(e);
                                 }
                             };
-                            stage_log!("[debug] mobile load: resolved {}", audio.url);
+                            stage_log!(
+                                "[debug] mobile load: resolved source={}",
+                                extract::media_source_label(&audio.url)
+                            );
                             let next = match AudioProxy::start(audio).await {
                                 Ok(p) => p,
                                 Err(e) => {
@@ -204,7 +224,10 @@ impl PlayerHost for NativeHost {
                             *proxy = Some(next);
                             url
                         };
-                        stage_log!("[debug] mobile load: plugin load {}", url);
+                        stage_log!(
+                            "[debug] mobile load: plugin load source={}",
+                            extract::media_source_label(&url)
+                        );
                         match self.plugin("load", json!({ "url": url })).await {
                             Ok(v) => {
                                 stage_log!("[debug] mobile load: plugin load ok");
@@ -237,6 +260,68 @@ impl PlayerHost for NativeHost {
                 proxy.take();
                 self.file.lock().await.take();
             }
+            match result {
+                Ok(_) => HostOutcome::Confirmed {
+                    request_id: req.request_id,
+                    revision: req.revision,
+                },
+                Err(kind) => HostOutcome::Rejected {
+                    request_id: req.request_id,
+                    revision: req.revision,
+                    kind,
+                },
+            }
+        })
+    }
+}
+
+/// Plays a track through the YouTube page the plugin keeps in a hidden web view, for when the direct stream is
+/// refused. The page is the provider's own player; only its reports settle state, and `poll` carries them like any
+/// other player's.
+pub struct PageHost {
+    app: AppHandle<Wry>,
+    revision: Arc<AtomicU64>,
+}
+
+/// The page may need a cold start, a consent screen and an ad before it reports.
+const PAGE_LOAD_TIMEOUT: Duration = Duration::from_secs(35);
+
+impl PlayerHost for PageHost {
+    fn provider(&self) -> ProviderId {
+        ProviderId::YouTube
+    }
+
+    fn prepare<'a>(&'a self, req: HostRequest) -> HostFuture<'a> {
+        Box::pin(async move {
+            self.revision.store(req.revision, Ordering::SeqCst);
+            let result = match &req.command {
+                PlaybackCommand::Load(track) => {
+                    if !extract::valid_id(&track.provider_track_id) {
+                        Err(extract::failed())
+                    } else {
+                        stage_log!("[debug] mobile load: page fallback");
+                        call_within(
+                            &self.app,
+                            "pageLoad",
+                            json!({ "videoId": track.provider_track_id }),
+                            PAGE_LOAD_TIMEOUT,
+                        )
+                        .await
+                    }
+                }
+                PlaybackCommand::Play | PlaybackCommand::Resume => {
+                    call(&self.app, "play", json!({})).await
+                }
+                PlaybackCommand::Pause => call(&self.app, "pause", json!({})).await,
+                PlaybackCommand::Stop => call(&self.app, "stop", json!({})).await,
+                PlaybackCommand::Seek { position_ms } => {
+                    call(&self.app, "seek", json!({ "positionMs": position_ms })).await
+                }
+                PlaybackCommand::SetVolume(v) => {
+                    call(&self.app, "setVolume", json!({ "volume": v.value() })).await
+                }
+                _ => Err(extract::failed()),
+            };
             match result {
                 Ok(_) => HostOutcome::Confirmed {
                     request_id: req.request_id,

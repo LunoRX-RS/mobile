@@ -27,11 +27,19 @@ The old one-line "Not present" claim understated the gap. Three honest categorie
 
 `src-tauri/plugins/lunor-native/` is a Tauri plugin with no webview commands: only Rust can call it, so remote content cannot reach native audio or secrets. Swift (`ios/Sources/LunorNativePlugin.swift`) and Kotlin (`android/.../LunorNativePlugin.kt`) implement one JSON contract:
 
-`load {url}` · `play` · `pause` · `stop` · `seek {positionMs}` · `setVolume {volume}` · `poll` → `{status, positionMs, durationMs, remote[]}` · `nowPlaying {...}` · `signIn` → `{cookies[]}` · Android only: `secretGet/Set/Delete`.
+`load {url}` · `pageLoad {videoId}` (Android only; iOS rejects it) · `play` · `pause` · `stop` · `seek {positionMs}` · `setVolume {volume}` · `poll` → `{status, positionMs, durationMs, remote[]}` · `nowPlaying {...}` · `signIn` → `{cookies[]}` · Android only: `secretGet/Set/Delete`.
 
 `poll` is read by `core/playback/mobile.rs::watch` every 250 ms while a track is loaded (1 s when idle). The platform latches `ended`/`failed`, so each transition is seen once.
 
 Only `file://` URLs (the disk cache) and `http://127.0.0.1` (loopback proxy) are accepted as sources.
+
+### YouTube page fallback (Android)
+
+When the direct stream is refused (`Failed` or `MediaRefused`), `core/playback/routing.rs::RoutingHost` asks the plugin to `pageLoad` the track: `PagePlayer.kt` opens `https://www.youtube.com/watch?v=<id>` in a hidden, attached 1x1 web view (no JavaScript bridge, navigation limited to the sign-in host rules, `m.youtube.com` included) and reads the page's own player state from its title. This is the same fallback the desktop app has. While the page holds the track, `play/pause/seek/setVolume/stop/poll` act on it; every new load starts from the direct player again. If the page fails too, the direct refusal is the error shown. Not done: sound effects in the page, the lock-screen/notification card (the media session follows ExoPlayer, not the page), and playback with the screen off is not verified. iOS has no page player.
+
+### Launcher icon
+
+`src-tauri/gen/` is git-ignored and `tauri android init` writes Tauri's default icon there once. `scripts/sync-android-icons.sh` (run by `mobile-env.sh` before every command) copies `src-tauri/icons/android/*` into it, so each APK carries the project icon. A launcher caches icons; if the old one stays, uninstall the app once (this clears sign-in and cache).
 
 ## iOS audio format
 
