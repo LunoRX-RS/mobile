@@ -363,6 +363,11 @@ class LunorNativePlugin(private val activity: Activity) : Plugin(activity) {
     fun nowPlaying(invoke: Invoke) {
         val args = invoke.parseArgs(NowPlayingArgs::class.java)
         onMain(invoke) {
+            if (page.active) {
+                page.describe(args.title, args.artist, args.artworkUrl)
+                invoke.resolve()
+                return@onMain
+            }
             val player = Audio.player(activity)
             val current = player.currentMediaItem
             if (current != null) {

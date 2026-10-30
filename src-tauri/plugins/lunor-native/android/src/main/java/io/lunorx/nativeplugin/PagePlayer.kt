@@ -30,7 +30,19 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
     private var positionMs = 0L
     private var durationMs = 0L
 
+    // The media session shows this while the page holds the track; see [PageMirror].
+    private val mirror = PageMirror()
+    private var shown = false
+
     val active: Boolean get() = web != null
+
+    /** Title, artist and artwork for the system media card; the page's own title is not for display. */
+    fun describe(title: String?, artist: String?, artworkUrl: String?) = mirror.describe(title, artist, artworkUrl)
+
+    private fun refresh() {
+        val live = wanted && state != "ended" && state != "error"
+        mirror.update(live, live && state == "waiting", state == "ended", positionMs, durationMs)
+    }
 
     fun load(videoId: String, invoke: Invoke) {
         destroy()
@@ -90,10 +102,13 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
         if (!wanted && state == "playing") call("pause()")
         positionMs = position
         durationMs = duration
+        if (shown) refresh()
         if (loading) {
             // Loaded: hold it paused, as core expects, then let reports through.
             loading = false
             deadline?.let(main::removeCallbacks)
+            shown = true
+            Audio.showPage(mirror)
             call("pause()")
             pending?.resolve()
             pending = null
@@ -107,11 +122,13 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
     fun play() {
         wanted = true
         call("play()")
+        refresh()
     }
 
     fun pause() {
         wanted = false
         call("pause()")
+        refresh()
     }
 
     fun seek(ms: Long) = call("seek($ms)")
@@ -145,6 +162,10 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
             it.destroy()
         }
         web = null
+        if (shown) {
+            shown = false
+            Audio.showPage(null)
+        }
     }
 
     private companion object {
