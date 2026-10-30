@@ -13,7 +13,7 @@ use crate::{
         library::{LibraryError, SavedTrack},
         youtube_import::{Import, Origin, fetch},
     },
-    sync::{api::Provider, local_store::LocalEntry},
+    sync::{api::Provider, engine::ErrorCategory, local_store::LocalEntry},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -24,7 +24,7 @@ use std::{
     },
     time::Duration,
 };
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
 const EVENT: &str = "core://youtube/import";
 const AUTO_EVERY_SECS: u64 = 6 * 3600;
@@ -646,5 +646,128 @@ mod tests {
             .map(|r| r.endpoint.clone())
             .collect();
         assert_eq!(endpoints, ["like/like", "like/removelike", "like/like"]);
+    }
+}
+
+/// Imports a single YouTube / YouTube Music playlist (by URL or id) into the local library.
+/// Public playlists are fetched anonymously; no sign-in is required. Returns the new local playlist id.
+#[tauri::command]
+pub async fn youtube_import_playlist_from_url(
+    app: AppHandle,
+    window: WebviewWindow,
+    engine: State<'_, SyncEngineState>,
+    url: String,
+) -> Result<String, ErrorCategory> {
+    // Only the main window may trigger imports.
+    if window.label() != "main" {
+        return Err(ErrorCategory::Validation);
+    }
+    let id = parse_youtube_playlist_id(&url).ok_or(ErrorCategory::Validation)?;
+
+    let yt = app
+        .state::<crate::commands::youtube::YouTubeState>()
+        .yt
+        .clone()
+        .filter(|_| {
+            app.state::<crate::commands::youtube::YouTubeState>()
+                .connected()
+        })
+        .unwrap_or_else(|| {
+            crate::core::yt::Yt::new(std::time::Duration::from_secs(30)).unwrap_or_else(|_| {
+                crate::core::yt::Yt::from_client(innerlight::Client::builder().build().unwrap())
+            })
+        });
+    let mut videos = Vec::new();
+    let mut cont: Option<String> = None;
+    let mut pages = 0u32;
+    loop {
+        if videos.len() >= 500 || pages >= 20 {
+            break;
+        }
+        let page = yt
+            .youtube()
+            .playlist(&id, cont.as_deref())
+            .await
+            .map_err(|_| ErrorCategory::Offline)?;
+        videos.extend(page.items);
+        cont = page.continuation;
+        pages += 1;
+        if cont.is_none() {
+            break;
+        }
+    }
+    let tracks: Vec<SavedTrack> = videos
+        .into_iter()
+        .filter_map(crate::core::youtube_import::video_track)
+        .collect();
+
+    let mut checkout = engine.checkout().await?;
+    let eng = checkout.engine();
+    let short = &id[..id.len().min(8)];
+    let name = format!("YouTube playlist {short}");
+    let local_id = eng
+        .create_local(&name, None)
+        .map_err(|_| ErrorCategory::Validation)?;
+    for t in &tracks {
+        let _ = eng.add_local_entry(&local_id, entry(t));
+    }
+    let _ = app;
+    Ok(local_id)
+}
+
+fn parse_youtube_playlist_id(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if innerlight::ids::is_playlist_id(trimmed) {
+        return Some(trimmed.to_owned());
+    }
+    // Query string form: ...?list=PL...
+    if let Some(idx) = trimmed.find("list=") {
+        let rest = &trimmed[idx + 5..];
+        let end = rest
+            .find(|c: char| c == '&' || c == '#' || c.is_whitespace())
+            .unwrap_or(rest.len());
+        let candidate = &rest[..end];
+        if innerlight::ids::is_playlist_id(candidate) {
+            return Some(candidate.to_owned());
+        }
+    }
+    // Path segment form: /playlist/PL...
+    if let Ok(url) = url::Url::parse(trimmed) {
+        let segs: Vec<&str> = url.path_segments().map(|s| s.collect()).unwrap_or_default();
+        for seg in segs {
+            if innerlight::ids::is_playlist_id(seg) {
+                return Some(seg.to_owned());
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod playlist_link_tests {
+    use super::parse_youtube_playlist_id;
+
+    #[test]
+    fn reads_a_playlist_id_from_a_link_or_a_bare_id() {
+        let id = "PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf";
+        for raw in [
+            id.to_owned(),
+            format!("https://www.youtube.com/playlist?list={id}"),
+            format!("https://music.youtube.com/watch?v=dQw4w9WgXcQ&list={id}&index=2"),
+            format!("  https://www.youtube.com/playlist?list={id}#x "),
+        ] {
+            assert_eq!(
+                parse_youtube_playlist_id(&raw).as_deref(),
+                Some(id),
+                "{raw}"
+            );
+        }
+    }
+
+    #[test]
+    fn other_input_is_not_a_playlist() {
+        for raw in ["", "list=", "has space"] {
+            assert_eq!(parse_youtube_playlist_id(raw), None, "{raw}");
+        }
     }
 }

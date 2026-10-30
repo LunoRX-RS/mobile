@@ -17,6 +17,8 @@ export interface ImportReport {
 }
 export type ImportEvent = { state: "running" } | { state: "done"; report: ImportReport } | { state: "failed" };
 /** Imports the YouTube Music collection now (read-only toward YouTube). Rejects with "inUse" while another run is going. */
+/** Imports one YouTube or YouTube Music playlist (a link or an id) into the local library; resolves with the new local playlist id. */
+export function youtubeImportPlaylistFromUrl(url: string): Promise<string> { return invoke("youtube_import_playlist_from_url", { url }); }
 export function youtubeImport(): Promise<ImportReport> { return invoke("youtube_import"); }
 export function subscribeYouTubeImport(callback: (event: ImportEvent) => void): Promise<UnlistenFn> {
   return listen<ImportEvent>("core://youtube/import", (event) => callback(event.payload));

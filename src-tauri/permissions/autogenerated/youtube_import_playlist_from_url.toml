@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-youtube-import-playlist-from-url"
+description = "Enables the youtube_import_playlist_from_url command without any pre-configured scope."
+commands.allow = ["youtube_import_playlist_from_url"]
+
+[[permission]]
+identifier = "deny-youtube-import-playlist-from-url"
+description = "Denies the youtube_import_playlist_from_url command without any pre-configured scope."
+commands.deny = ["youtube_import_playlist_from_url"]

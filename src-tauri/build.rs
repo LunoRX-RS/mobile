@@ -68,6 +68,7 @@ fn main() {
             "sync_remove_local_entry",
             "sync_flush_pending",
             "sync_register",
+            "youtube_import_playlist_from_url",
             "shared_link_take",
             "shared_playlist_get",
             "shared_token_from_url",

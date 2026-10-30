@@ -29,7 +29,7 @@ pub struct ImportedPlaylist {
 }
 
 /// A YouTube video as a saved track. Livestreams and Shorts are not music to play, so they are left out.
-fn video_track(v: innerlight::youtube::Video) -> Option<SavedTrack> {
+pub fn video_track(v: innerlight::youtube::Video) -> Option<SavedTrack> {
     // A row with neither channel nor length is a deleted or private video: only its placeholder title is left.
     if v.is_live
         || v.is_short

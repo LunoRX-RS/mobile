@@ -187,6 +187,7 @@ pub fn run() {
             commands::sync::sync_remove_local_entry,
             commands::sync::sync_flush_pending,
             commands::sync::sync_register,
+            commands::youtube_import::youtube_import_playlist_from_url,
             commands::share::shared_link_take,
             commands::share::shared_token_from_url,
             commands::share::shared_playlist_get,
