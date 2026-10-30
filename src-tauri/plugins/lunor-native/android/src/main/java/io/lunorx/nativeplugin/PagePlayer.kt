@@ -185,6 +185,30 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
               const state = (m) => (m.ended ? "ended" : m.error ? "error" : m.paused ? "paused" : m.readyState < 3 ? "waiting" : "playing");
               const first = id();
               let last = "";
+              // YouTube pauses a page it believes is hidden, which is what a page in the background looks like. This
+              // page only ever plays audio, so it says it is visible.
+              try {
+                Object.defineProperty(document, "hidden", { get: () => false, configurable: true });
+                Object.defineProperty(document, "visibilityState", { get: () => "visible", configurable: true });
+              } catch (e) { /* the page keeps its own answer */ }
+              // The page's ads (user decision 2026-10-31, see AGENTS.md): muted, sped up, skipped where the page lets
+              // them be, and never reported as the track. `lastAd` keeps the end of an ad from reading as the end of
+              // the episode.
+              let lastAd = 0;
+              let lastPos = 0;
+              let lastDur = 0;
+              let fast = false;
+              const adShowing = () => {
+                const player = document.getElementById("movie_player");
+                return !!(player && player.classList.contains("ad-showing"));
+              };
+              const skipAd = (m) => {
+                m.muted = true;
+                if (m.playbackRate !== 16) { m.playbackRate = 16; fast = true; }
+                const skip = document.querySelector(".ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button__text");
+                if (skip) (skip.closest("button") || skip).click();
+                if (Number.isFinite(m.duration) && m.duration > 0 && m.currentTime < m.duration - 0.25) m.currentTime = m.duration;
+              };
               // Without a tap the page starts its player muted and says so with an "unmute" button. Core owns the
               // volume, so once it has asked for sound the page is held at the level it chose.
               let want = false;
@@ -202,6 +226,14 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
               setInterval(() => {
                 const m = media();
                 if (!m || !id()) return;
+                if (adShowing()) {
+                  lastAd = Date.now();
+                  skipAd(m);
+                  const line = P + id() + "|" + lastPos + "|" + lastDur + "|waiting";
+                  if (line !== last) { last = line; document.title = line; }
+                  return;
+                }
+                if (fast) { m.playbackRate = 1; fast = false; }
                 if (want) sound(m);
                 if (first && id() !== first) {
                   m.pause();
@@ -211,7 +243,10 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
                   return;
                 }
                 const dur = Number.isFinite(m.duration) ? m.duration : 0;
-                const line = P + id() + "|" + Math.round(m.currentTime * 1000) + "|" + Math.round(dur * 1000) + "|" + state(m);
+                lastPos = Math.round(m.currentTime * 1000);
+                lastDur = Math.round(dur * 1000);
+                const shown = Date.now() - lastAd < 2000 ? "waiting" : state(m);
+                const line = P + id() + "|" + lastPos + "|" + lastDur + "|" + shown;
                 if (line !== last) { last = line; document.title = line; }
               }, 500);
               window.__lunorx = {
