@@ -3,6 +3,7 @@
 //! starts from the direct player again. No platform code here, so it is built and tested on every target.
 use super::{
     command::PlaybackCommand,
+    diag::stage_log,
     host::{HostFuture, HostOutcome, HostRequest, PlayerHost},
 };
 use crate::core::{
@@ -85,7 +86,16 @@ impl<D: PlayerHost, P: PlayerHost> PlayerHost for RoutingHost<D, P> {
                     revision,
                     kind,
                 } if page_can_retry(&kind) => {
+                    stage_log!("[debug] routing: direct load rejected ({kind:?}), trying the page");
                     let outcome = self.page.prepare(retry).await;
+                    stage_log!(
+                        "[debug] routing: page {}",
+                        if matches!(outcome, HostOutcome::Confirmed { .. }) {
+                            "confirmed"
+                        } else {
+                            "rejected too"
+                        }
+                    );
                     self.set_holder(matches!(outcome, HostOutcome::Confirmed { .. }));
                     match outcome {
                         confirmed @ HostOutcome::Confirmed { .. } => confirmed,

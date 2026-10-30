@@ -74,9 +74,10 @@ function errorText(error: unknown): string {
     if (debug.includes("age") || debug.includes("Age")) return `This video is age-restricted. Sign in with Google to verify your age.${DEV_MODE ? ` [debug: ${debug}]` : ""}`;
     if (debug.includes("region") || debug.includes("Region")) return `This video is not available in your region.${DEV_MODE ? ` [debug: ${debug}]` : ""}`;
     if (debug.includes("sign.in") || debug.includes("verify")) return `YouTube asked for verification. Sign in with Google in Connections.${DEV_MODE ? ` [debug: ${debug}]` : ""}`;
-    return `The audio player refused this track. Try another track.${DEV_MODE ? ` [debug: ${debug}]` : ""}`;
+    return `The audio player refused this track. Try another track. (hostRejected)${DEV_MODE ? ` [debug: ${debug}]` : ""}`;
   }
-  return `Could not load this track. Try again.${DEV_MODE ? ` [debug: ${JSON.stringify(error)}]` : ""}`;
+  // The category is a fixed word, never provider text, so it is safe to show and tells a bug report which path failed.
+  return `Could not load this track. Try again.${category ? ` (${category})` : ""}${DEV_MODE ? ` [debug: ${JSON.stringify(error)}]` : ""}`;
 }
 
 async function run(action: () => Promise<PlayerStateDto>) {
