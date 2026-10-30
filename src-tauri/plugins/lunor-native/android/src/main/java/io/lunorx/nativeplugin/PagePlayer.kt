@@ -25,6 +25,8 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
     private var pending: Invoke? = null
     private var deadline: Runnable? = null
     private var state = "waiting"
+    // Core has not asked for sound yet: whatever the page does by itself (it autoplays) is held paused and reported so.
+    private var wanted = false
     private var positionMs = 0L
     private var durationMs = 0L
 
@@ -35,6 +37,7 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
         expected = videoId
         loading = true
         state = "waiting"
+        wanted = false
         positionMs = 0
         durationMs = 0
         pending = invoke
@@ -84,6 +87,7 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
         val duration = parts[2].toLongOrNull() ?: return
         if (parts[3] !in STATES) return
         state = parts[3]
+        if (!wanted && state == "playing") call("pause()")
         positionMs = position
         durationMs = duration
         if (loading) {
@@ -100,9 +104,15 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
         web?.evaluateJavascript("window.__lunorx&&window.__lunorx.$js", null)
     }
 
-    fun play() = call("play()")
+    fun play() {
+        wanted = true
+        call("play()")
+    }
 
-    fun pause() = call("pause()")
+    fun pause() {
+        wanted = false
+        call("pause()")
+    }
 
     fun seek(ms: Long) = call("seek($ms)")
 
@@ -111,10 +121,12 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
     fun poll(): JSObject {
         val status = when {
             loading -> "loading"
-            state == "playing" -> "playing"
-            state == "waiting" -> "buffering"
             state == "ended" -> "ended"
             state == "error" -> "failed"
+            // Loaded and not yet asked to play: core expects the track paused, whatever the page is doing.
+            !wanted -> "paused"
+            state == "playing" -> "playing"
+            state == "waiting" -> "buffering"
             else -> "paused"
         }
         return JSObject().put("status", status).put("positionMs", positionMs.toDouble()).put("durationMs", durationMs.toDouble())
