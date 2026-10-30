@@ -14,6 +14,7 @@ import { playTrack } from "../../lib/playback";
 import { parseYouTubeLink } from "../../lib/ytLink";
 import { playerTrackInfo } from "../../services/tauri/player";
 import { LinkPlay, linkTrack } from "./LinkPlay";
+import { sharedTokenFromUrl } from "../../services/tauri/share";
 import { AnimatePresence } from "motion/react";
 import { CollapseLi } from "../../components/Motion";
 import { Button, EmptyState, Screen, Section, Skeleton, StatusNote } from "../../components/ui";
@@ -89,6 +90,8 @@ export default function SearchScreen() {
       );
       return;
     }
+    // A pasted LunoRX share link (or its bare token) opens the shared playlist.
+    if (await sharedTokenFromUrl(text).then((token) => { if (token) useUi.getState().openShared(token); return token !== null; }, () => false)) return;
     pushRecent(text);
     const id = crypto.randomUUID();
     const previous = view.id;

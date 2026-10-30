@@ -28,6 +28,8 @@ import LoginPage from "../../features/accounts/LoginPage";
 import SettingsScreen from "../../features/settings/SettingsScreen";
 import StatsScreen from "../../features/stats/StatsScreen";
 import ReplayScreen from "../../features/replay/ReplayScreen";
+import SharedScreen from "../../features/shared/SharedScreen";
+import { SHARE_OPEN_EVENT, sharedLinkTake } from "../../services/tauri/share";
 import SyncPanel from "../../features/sync/SyncPanel";
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
@@ -122,6 +124,21 @@ export default function AppShell() {
   const phone = layout === "phone";
   const [mounted, setMounted] = useState(false);
   useEffect(() => { void loadCustomFonts(); }, []);
+  const openShared = useUi((s) => s.openShared);
+  // Share links open the shared-playlist view: live events, plus a link that arrived before this window listened.
+  useEffect(() => {
+    let active = true;
+    let unlisten: UnlistenFn | undefined;
+    void listen<string>(SHARE_OPEN_EVENT, (event) => openShared(event.payload)).then((fn) => {
+      if (active) unlisten = fn;
+      else fn();
+    });
+    void sharedLinkTake().then((token) => { if (token && active) openShared(token); }).catch(() => {});
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, [openShared]);
   useEffect(() => {
     setMounted(true);
     hydrateRecentSearches();
@@ -215,6 +232,7 @@ export default function AppShell() {
                     {view === "settings" && <SettingsScreen />}
                     {view === "stats" && <StatsScreen />}
                     {view === "replay" && <ReplayScreen />}
+                    {view === "shared" && <SharedScreen />}
                     {view === "sync" && <div className="lx-scope"><SyncPanel /></div>}
                   </ViewFrame>
                 </AnimatePresence>

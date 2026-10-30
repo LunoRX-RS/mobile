@@ -158,6 +158,27 @@ pub struct SessionResponse {
     pub expires_at: String,
 }
 
+/// Shape of `GET /api/v1/shared/{token}`. Only the fields the share screen shows are read.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedPlaylist {
+    pub name: String,
+    pub description: Option<String>,
+    pub entries: Vec<SharedEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedEntry {
+    pub provider: Provider,
+    pub provider_track_id: String,
+    pub provider_url: String,
+    pub title: String,
+    pub artists: Vec<String>,
+    pub artwork_url: Option<String>,
+    pub duration_ms: Option<u64>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaylistCreateRequest {
@@ -443,6 +464,16 @@ impl ApiClient {
             .http
             .get(self.url("/api/v1/auth/session"))
             .bearer_auth(token);
+        decode(&self.send(req).await?)
+    }
+
+    /// Public read of a shared playlist. No session token is sent: the share token is the only credential.
+    pub async fn get_shared(&self, token: &str) -> Result<SharedPlaylist, SyncError> {
+        let token = path_id(token)?;
+        let req = self
+            .http
+            .get(self.url(&format!("/api/v1/shared/{token}")))
+            .header(reqwest::header::ACCEPT, "application/json");
         decode(&self.send(req).await?)
     }
 

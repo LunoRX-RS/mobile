@@ -9,6 +9,7 @@ use sync::credentials::KeyringTokenStore;
 use sync::engine::{ErrorCategory, SyncEngine};
 use sync::settings::default_base_url;
 use tauri::{Emitter, Manager};
+use tauri_plugin_deep_link::DeepLinkExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -27,6 +28,7 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_lunor_native::init());
     builder
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
             #[cfg(target_os = "android")]
             {
@@ -38,6 +40,15 @@ pub fn run() {
                 .app_data_dir()
                 .map(|dir| dir.join("liked-songs.json"))
                 .map_err(|_| core::library::LibraryError::Storage);
+            // A `lunorx://share/{token}` link opens the app on the shared playlist, whether the app was running or not.
+            app.manage(commands::share::PendingShare::default());
+            let share_handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                commands::share::accept_urls(&share_handle, &event.urls())
+            });
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                commands::share::accept_urls(app.handle(), &urls);
+            }
             app.manage(commands::library::LibraryState::open(library_path));
             // Liked-songs sync keeps its account files under the app data directory next to the signed-out file.
             if let Ok(dir) = app.path().app_data_dir() {
@@ -176,6 +187,9 @@ pub fn run() {
             commands::sync::sync_remove_local_entry,
             commands::sync::sync_flush_pending,
             commands::sync::sync_register,
+            commands::share::shared_link_take,
+            commands::share::shared_token_from_url,
+            commands::share::shared_playlist_get,
             commands::sync::sync_share_playlist,
             commands::sync::sync_list_shares,
             commands::sync::sync_revoke_share,

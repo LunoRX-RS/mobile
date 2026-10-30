@@ -19,6 +19,7 @@ export type View =
   | "sync"
   | "stats"
   | "replay"
+  | "shared"
   | "artist"
   | "album";
 
@@ -48,6 +49,9 @@ interface UiState {
   /** Phone only: Settings shows one category (true) or the list of categories (false). */
   settingsDetail: boolean;
   selectedPlaylistId: string | null;
+  /** The token of the shared playlist on the "shared" view. */
+  sharedToken: string | null;
+  openShared: (token: string) => void;
   libraryTab: LibraryTab;
   likedOnly: boolean;
   query: string;
@@ -117,6 +121,11 @@ export const useUi = create<UiState>()((set, get) => ({
   npPanel: null,
   settingsDetail: false,
   selectedPlaylistId: null,
+  sharedToken: null,
+  openShared: (token) => {
+    set({ sharedToken: token });
+    get().navigate("shared");
+  },
   libraryTab: "playlists",
   likedOnly: false,
   query: "",

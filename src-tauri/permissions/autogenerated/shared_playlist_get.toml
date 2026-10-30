@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-shared-playlist-get"
+description = "Enables the shared_playlist_get command without any pre-configured scope."
+commands.allow = ["shared_playlist_get"]
+
+[[permission]]
+identifier = "deny-shared-playlist-get"
+description = "Denies the shared_playlist_get command without any pre-configured scope."
+commands.deny = ["shared_playlist_get"]

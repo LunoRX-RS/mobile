@@ -4,6 +4,7 @@ pub mod player;
 pub mod providers;
 pub mod remote;
 pub mod search;
+pub mod share;
 pub mod state;
 pub mod sync;
 pub mod validate;
