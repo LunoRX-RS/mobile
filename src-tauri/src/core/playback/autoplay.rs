@@ -215,7 +215,10 @@ const PREPARE_BUDGET: Duration = Duration::from_secs(60);
 const PREPARE_TIMEOUT: Duration = Duration::from_secs(45);
 /// The longest wait between two attempts after failures in a row, and the longest once the song is over.
 const RETRY_CAP_SECS: u64 = 30;
+#[cfg(not(test))]
 const OVER_RETRY_CAP: Duration = Duration::from_secs(4);
+#[cfg(test)]
+const OVER_RETRY_CAP: Duration = Duration::from_millis(400);
 /// A track that fails midway is reloaded from where it stopped by `commands::player` (up to twice). Only when it is
 /// still in error after this long is it given up on and the next one played.
 const ERROR_GRACE: Duration = Duration::from_secs(8);
@@ -226,15 +229,34 @@ fn backoff(failures: u32) -> Duration {
 }
 
 /// Waits before the next attempt after `failures` in a row. While the song is still playing there is time to spare, so the
-/// wait grows to the cap; once it is over the listener is waiting for sound, so the wait stays short.
-async fn retry_pause(engine: &Mutex<PlaybackEngine>, failures: u32) {
-    let over = matches!(
-        engine.lock().await.state(),
-        PlaybackState::Ended | PlaybackState::Error
-    );
-    let wait = backoff(failures);
-    tokio::time::sleep(if over { wait.min(OVER_RETRY_CAP) } else { wait }).await;
+/// wait grows to the cap. If the song ends meanwhile the listener is waiting for sound, so what is left of the wait is
+/// cut to [`OVER_RETRY_CAP`] from that moment. A change the caller must plan again for (`interrupted`) ends the wait
+/// at once. The state is looked at every [`RETRY_POLL`], so progress reports cannot shorten the pacing.
+async fn retry_pause(
+    engine: &Mutex<PlaybackEngine>,
+    failures: u32,
+    interrupted: impl Fn() -> bool,
+) {
+    let mut until = Instant::now() + backoff(failures);
+    let mut over_seen = false;
+    loop {
+        let now = Instant::now();
+        if now >= until || interrupted() {
+            return;
+        }
+        if !over_seen
+            && matches!(
+                engine.lock().await.state(),
+                PlaybackState::Ended | PlaybackState::Error
+            )
+        {
+            over_seen = true;
+            until = until.min(now + OVER_RETRY_CAP);
+        }
+        tokio::time::sleep(RETRY_POLL.min(until.saturating_duration_since(now))).await;
+    }
 }
+const RETRY_POLL: Duration = Duration::from_millis(250);
 
 /// How a session ended. Neither is a failure of autoplay: the listener stopped, changed or ended the list.
 #[derive(Debug, PartialEq, Eq)]
@@ -343,7 +365,7 @@ async fn session(
                     // Related music is on but nothing came back (the service or the network failed): ask again.
                     failures = failures.saturating_add(1);
                     status(&state, "finding", None);
-                    retry_pause(&engine, failures).await;
+                    retry_pause(&engine, failures, || mode(&state) != (repeat, radio_mode)).await;
                     continue 'outer;
                 }
             },
@@ -392,7 +414,7 @@ async fn session(
                     }
                     publish_queue(&state, &queue);
                     failures = failures.saturating_add(1);
-                    retry_pause(&engine, failures).await;
+                    retry_pause(&engine, failures, || mode(&state) != (repeat, radio_mode)).await;
                     continue 'outer;
                 }
                 Advance::Waiting => {}
@@ -405,7 +427,7 @@ async fn session(
                     queue.retain(|t| t.id != next.id);
                     publish_queue(&state, &queue);
                     status(&state, "finding", None);
-                    retry_pause(&engine, failures).await;
+                    retry_pause(&engine, failures, || mode(&state) != (repeat, radio_mode)).await;
                     continue 'outer;
                 }
             }
@@ -973,6 +995,36 @@ mod tests {
             advance(&mut player, "aqz-KE-bpKQ", &other, true).await,
             Advance::Played
         );
+    }
+    #[tokio::test]
+    async fn a_retry_wait_ends_at_once_when_the_plan_changes() {
+        let engine = Mutex::new(playing().await);
+        let started = Instant::now();
+        retry_pause(&engine, 6, || true).await;
+        assert!(started.elapsed() < Duration::from_millis(100));
+    }
+    #[tokio::test]
+    async fn a_retry_wait_is_cut_short_when_the_song_ends_during_it() {
+        let engine = Mutex::new(playing().await);
+        let ending = async {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            let mut player = engine.lock().await;
+            let revision = player.revision();
+            player.observe(revision, PlayerEvent::Ended).unwrap();
+        };
+        let started = Instant::now();
+        // A 30 s wait that would otherwise leave silence after the song ends.
+        tokio::join!(retry_pause(&engine, 6, || false), ending);
+        let waited = started.elapsed();
+        assert!(waited >= Duration::from_millis(600), "{waited:?}");
+        assert!(waited < Duration::from_secs(3), "{waited:?}");
+    }
+    #[tokio::test]
+    async fn a_retry_wait_keeps_its_pacing_while_the_song_plays() {
+        let engine = Mutex::new(playing().await);
+        let started = Instant::now();
+        retry_pause(&engine, 1, || false).await;
+        assert!(started.elapsed() >= Duration::from_millis(950));
     }
     #[test]
     fn retries_slow_down_and_stop_at_the_cap() {
