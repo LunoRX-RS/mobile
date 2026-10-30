@@ -10,6 +10,10 @@ import {
   type SearchResponseDto,
 } from "../../services/tauri/search";
 import { useUi } from "../../lib/store";
+import { playTrack } from "../../lib/playback";
+import { parseYouTubeLink } from "../../lib/ytLink";
+import { playerTrackInfo } from "../../services/tauri/player";
+import { LinkPlay, linkTrack } from "./LinkPlay";
 import { AnimatePresence } from "motion/react";
 import { CollapseLi } from "../../components/Motion";
 import { Button, EmptyState, Screen, Section, Skeleton, StatusNote } from "../../components/ui";
@@ -75,6 +79,16 @@ export default function SearchScreen() {
   async function runSearch(raw: string) {
     const text = raw.trim();
     if (text === "") return;
+    // A pasted YouTube or YouTube Music link plays at once; it is not a search.
+    const pasted = parseYouTubeLink(text);
+    if (pasted) {
+      // Title and artwork first, so the player and history show the real song; plays anyway if they cannot be read.
+      void playerTrackInfo(pasted.id).then(
+        (t) => playTrack(linkTrack(pasted, t)),
+        () => playTrack(linkTrack(pasted)),
+      );
+      return;
+    }
     pushRecent(text);
     const id = crypto.randomUUID();
     const previous = view.id;
@@ -132,6 +146,7 @@ export default function SearchScreen() {
   const hits = result?.hits ?? [];
   const noHits = result !== null && hits.length === 0;
   const noticeGroups = result?.groups.filter((g) => g.kind !== "ok") ?? [];
+  const link = parseYouTubeLink(query);
   const youtubeNeedsKey = providers.find((p) => p.provider === "YouTube")?.search === "RequiresAuth";
 
   return (
@@ -158,7 +173,7 @@ export default function SearchScreen() {
                 value={query}
                 onChange={(e) => { if(view.id)void searchCancel(view.id).catch(()=>{}); setView(IDLE);setQuery(e.currentTarget.value); }}
                 onKeyDown={onInputKeyDown}
-                placeholder="Songs, artists and YouTube videos"
+                placeholder="Songs, artists, videos, or paste a YouTube link"
                 autoComplete="off"
                 className="h-full min-w-0 flex-1 bg-transparent text-[17px] text-primary-text outline-none placeholder:text-tertiary-text [&::-webkit-search-cancel-button]:hidden"
               />
@@ -202,7 +217,7 @@ export default function SearchScreen() {
           )}
         </form>
 
-        {!loading && query.trim() !== view.text && <SearchSuggestions query={query} onChoose={(text)=>{setQuery(text);void runSearch(text);}} />}
+        {!loading && !link && query.trim() !== view.text && <SearchSuggestions query={query} onChoose={(text)=>{setQuery(text);void runSearch(text);}} />}
 
         <p aria-live="polite" className="sr-only">
           {loading ? "Searching" : view.message}
@@ -229,7 +244,9 @@ export default function SearchScreen() {
           </StatusNote>
         )}
 
-        {!loading && hits.length > 0 && (
+        {link && <LinkPlay link={link} />}
+
+        {!loading && !link && hits.length > 0 && (
           <Section id="search-songs" title="Songs"><ul aria-label="Search results" className="lx-stagger flex flex-col">
             {hits.map((hit, i) => <ResultRow key={`${hit.provider}:${hit.providerTrackId}`} hit={hit} following={hits.slice(i + 1)} />)}
           </ul></Section>
