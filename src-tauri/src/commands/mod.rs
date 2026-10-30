@@ -1,6 +1,7 @@
 pub mod clock;
 pub mod dto;
 pub mod player;
+pub mod podcasts;
 pub mod providers;
 pub mod remote;
 pub mod search;

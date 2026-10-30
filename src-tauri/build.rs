@@ -69,6 +69,7 @@ fn main() {
             "sync_flush_pending",
             "sync_register",
             "youtube_import_playlist_from_url",
+            "podcast_browse",
             "shared_link_take",
             "shared_playlist_get",
             "shared_token_from_url",

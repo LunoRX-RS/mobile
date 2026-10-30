@@ -188,6 +188,7 @@ pub fn run() {
             commands::sync::sync_flush_pending,
             commands::sync::sync_register,
             commands::youtube_import::youtube_import_playlist_from_url,
+            commands::podcasts::podcast_browse,
             commands::share::shared_link_take,
             commands::share::shared_token_from_url,
             commands::share::shared_playlist_get,

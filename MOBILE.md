@@ -23,6 +23,10 @@ The old one-line "Not present" claim understated the gap. Three honest categorie
 
 **Present but gated off phones, not deleted.** Discord settings (commands still compiled and registered), app zoom (`setZoom` + capability remain), system / imported fonts (`platform_families()` returns empty on mobile) — all hidden via `DESKTOP_ONLY_GROUPS` / `DESKTOP_ONLY_CATEGORIES` in `src/lib/layout.ts`. `Make lyrics file` is hidden only on phones; it works on tablet widths.
 
+### Podcasts (mobile only)
+
+The desktop app has no podcast view. `core/podcasts.rs` + `commands/podcasts.rs::podcast_browse` search YouTube videos for a show name or topic (" podcast" is appended when missing) and keep uploads of at least 20 minutes that are not live or Shorts. Results are ordinary YouTube hits, so play, queue and add-to-playlist work as for songs; long episodes stream through the loopback proxy. The Podcasts screen (More menu on phones, sidebar on tablets) has suggestion chips, a "Follow" list kept in the web view's local storage (per device, not synced) and "More episodes" paging. There is no show page, subscription feed or new-episode notice: YouTube's library exposes none, so a show is only as complete as the search that finds it.
+
 ## The `lunor-native` plugin
 
 `src-tauri/plugins/lunor-native/` is a Tauri plugin with no webview commands: only Rust can call it, so remote content cannot reach native audio or secrets. Swift (`ios/Sources/LunorNativePlugin.swift`) and Kotlin (`android/.../LunorNativePlugin.kt`) implement one JSON contract:
