@@ -164,9 +164,24 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
               const state = (m) => (m.ended ? "ended" : m.error ? "error" : m.paused ? "paused" : m.readyState < 3 ? "waiting" : "playing");
               const first = id();
               let last = "";
+              // Without a tap the page starts its player muted and says so with an "unmute" button. Core owns the
+              // volume, so once it has asked for sound the page is held at the level it chose.
+              let want = false;
+              let vol = 1;
+              const sound = (m) => {
+                const player = document.getElementById("movie_player");
+                if (vol > 0) {
+                  if (player && player.unMute && player.isMuted && player.isMuted()) player.unMute();
+                  if (m.muted) m.muted = false;
+                } else {
+                  m.muted = true;
+                }
+                if (Math.abs(m.volume - vol) > 0.001) m.volume = vol;
+              };
               setInterval(() => {
                 const m = media();
                 if (!m || !id()) return;
+                if (want) sound(m);
                 if (first && id() !== first) {
                   m.pause();
                   m.muted = true;
@@ -179,10 +194,10 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
                 if (line !== last) { last = line; document.title = line; }
               }, 500);
               window.__lunorx = {
-                play: () => { const m = media(); if (m) m.play().catch(() => {}); },
-                pause: () => { const m = media(); if (m) m.pause(); },
+                play: () => { want = true; const m = media(); if (m) { sound(m); m.play().catch(() => {}); } },
+                pause: () => { want = false; const m = media(); if (m) m.pause(); },
                 seek: (ms) => { const m = media(); if (m) m.currentTime = ms / 1000; },
-                volume: (n) => { const m = media(); if (m) { m.volume = n / 100; m.muted = n === 0; } },
+                volume: (n) => { vol = Math.max(0, Math.min(1, n / 100)); const m = media(); if (m && want) sound(m); },
               };
             })();
         """.trimIndent()
