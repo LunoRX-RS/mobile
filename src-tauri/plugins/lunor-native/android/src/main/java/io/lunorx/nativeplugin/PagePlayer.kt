@@ -38,6 +38,8 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
     private var expected = ""
     private var loading = false
     private var pending: Invoke? = null
+    private var pendingPlay: Invoke? = null
+    private var playDeadline: Runnable? = null
     private var deadline: Runnable? = null
     private var state = "waiting"
     // Core has not asked for sound yet: whatever the page does by itself (it autoplays) is held paused and reported so.
@@ -72,7 +74,7 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
 
     private fun refresh() {
         val live = wanted && state != "ended" && state != "error"
-        mirror.update(live, live && state == "waiting", state == "ended", positionMs, durationMs)
+        mirror.update(live, live && state != "playing", state == "ended", positionMs, durationMs)
     }
 
     fun load(videoId: String, invoke: Invoke) {
@@ -129,7 +131,10 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
         val position = parts[1].toLongOrNull() ?: return
         val duration = parts[2].toLongOrNull() ?: return
         if (parts[3] !in STATES) return
+        if (state != parts[3]) Log.i("LunorPage", "state=${parts[3]} wanted=$wanted")
         state = parts[3]
+        if (wanted && state == "playing") settlePlay()
+        if (state == "error" || state == "ended") settlePlay("page stopped before playback")
         if (!wanted && state == "playing") call("pause()")
         positionMs = position
         durationMs = duration
@@ -151,14 +156,35 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
         web?.evaluateJavascript("window.__lunorx&&window.__lunorx.$js", null)
     }
 
-    fun play() {
+    private fun settlePlay(error: String? = null) {
+        playDeadline?.let(main::removeCallbacks)
+        playDeadline = null
+        pendingPlay?.let { if (error == null) it.resolve() else it.reject(error) }
+        pendingPlay = null
+    }
+
+    fun play(invoke: Invoke) {
+        settlePlay("superseded")
+        pendingPlay = invoke
         wanted = true
         holdAwake(true)
         call("play()")
+        val timeout = Runnable {
+            Log.w("LunorPage", "playback start timed out")
+            wanted = false
+            state = "error"
+            call("pause()")
+            holdAwake(false)
+            settlePlay("page playback did not start")
+            refresh()
+        }
+        playDeadline = timeout
+        main.postDelayed(timeout, 10_000L)
         refresh()
     }
 
     fun pause() {
+        settlePlay("paused")
         wanted = false
         holdAwake(false)
         call("pause()")
@@ -177,13 +203,14 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
             // Loaded and not yet asked to play: core expects the track paused, whatever the page is doing.
             !wanted -> "paused"
             state == "playing" -> "playing"
-            state == "waiting" -> "buffering"
+            state == "waiting" || (wanted && state == "paused") -> "buffering"
             else -> "paused"
         }
         return JSObject().put("status", status).put("positionMs", positionMs.toDouble()).put("durationMs", durationMs.toDouble())
     }
 
     fun destroy() {
+        settlePlay("stopped")
         holdAwake(false)
         deadline?.let(main::removeCallbacks)
         deadline = null
@@ -252,7 +279,9 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
                 if (m.playbackRate !== 16) { m.playbackRate = 16; fast = true; }
                 const skip = document.querySelector(".ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button__text");
                 if (skip) (skip.closest("button") || skip).click();
-                if (Number.isFinite(m.duration) && m.duration > 0 && m.currentTime < m.duration - 0.25) m.currentTime = m.duration;
+                // Let the media clock cross the end itself: seeking to exactly duration can leave the page paused
+                // on its finished ad instead of triggering its transition back to the requested track.
+                if (Number.isFinite(m.duration) && m.duration > 0.25 && m.currentTime < m.duration - 0.25) m.currentTime = m.duration - 0.1;
               };
               // Without a tap the page starts its player muted and says so with an "unmute" button. Core owns the
               // volume, so once it has asked for sound the page is held at the level it chose.
@@ -268,10 +297,22 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
                 }
                 if (Math.abs(m.volume - vol) > 0.001) m.volume = vol;
               };
+              // A page may reject the first play before its media is ready, or pause itself while replacing media.
+              // Keep core's intent until an explicit pause; a dispatched play is not proof that sound has started.
+              let starting = false;
+              const start = (m) => {
+                if (!want || !m || !m.paused || m.ended || m.error || starting) return;
+                starting = true;
+                m.play().then(() => {
+                  starting = false;
+                  if (!want) m.pause();
+                }, () => { starting = false; });
+              };
               setInterval(() => {
                 const m = media();
                 if (!m || !id()) return;
                 watch(m);
+                if (id() === first) start(m);
                 if (adShowing()) {
                   lastAd = Date.now();
                   skipAd(m);
@@ -296,7 +337,7 @@ class PagePlayer(private val activity: Activity, private val main: Handler) {
                 if (line !== last) { last = line; document.title = line; }
               }, 500);
               window.__lunorx = {
-                play: () => { want = true; const m = media(); if (m) { sound(m); m.play().catch(() => {}); } },
+                play: () => { want = true; const m = media(); if (m) { sound(m); start(m); } },
                 pause: () => { want = false; const m = media(); if (m) m.pause(); },
                 seek: (ms) => { const m = media(); if (m) m.currentTime = ms / 1000; },
                 volume: (n) => { vol = Math.max(0, Math.min(1, n / 100)); const m = media(); if (m && want) sound(m); },

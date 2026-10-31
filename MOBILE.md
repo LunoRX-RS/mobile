@@ -45,6 +45,10 @@ Only `file://` URLs (the disk cache) and `http://127.0.0.1` (loopback proxy) are
 
 ### YouTube page fallback (Android)
 
+The page retries a rejected start or an unexpected pause while core still wants playback. Explicit pause, end and media errors stop those retries. `play` resolves only after the page reports `playing`; a start that remains unconfirmed for 10 seconds fails before Rust's 12-second command deadline. While a wanted page is paused or waiting, the media session reports buffering instead of advancing a fictitious playing position. Regression checks: `bun test tests/page-player.test.mjs`.
+
+2026-10-31: built and installed the debug APK on an OPPO CPH2599 running Android 16. ADB confirmed fallback playback, system Pause/Resume, two Next transitions and three automatic transitions after seeking near each track's end (including cached audio → page fallback). These are accelerated transitions, not a full-length listening soak test. `bun test tests` passed 10 tests and `bun run lint` passed. iOS simulator and Android emulator were unavailable on this host; audible output was not independently checked.
+
 When the direct stream is refused (`Failed` or `MediaRefused`), `core/playback/routing.rs::RoutingHost` asks the plugin to `pageLoad` the track: `PagePlayer.kt` opens `https://www.youtube.com/watch?v=<id>` in a hidden, attached 1x1 web view (no JavaScript bridge, navigation limited to the sign-in host rules, `m.youtube.com` included) and reads the page's own player state from its title. This is the same fallback the desktop app has. While the page holds the track, `play/pause/seek/setVolume/stop/poll` act on it; every new load starts from the direct player again. If the page fails too, the direct refusal is the error shown. Not done: sound effects in the page, the lock-screen/notification card (the media session follows ExoPlayer, not the page), and playback with the screen off is not verified. iOS has no page player.
 
 ### Launcher icon

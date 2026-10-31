@@ -242,8 +242,7 @@ class LunorNativePlugin(private val activity: Activity) : Plugin(activity) {
     fun play(invoke: Invoke) {
         onMain(invoke) {
             if (page.active) {
-                page.play()
-                invoke.resolve()
+                page.play(invoke)
                 return@onMain
             }
             val player = Audio.player(activity)

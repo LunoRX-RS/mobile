@@ -54,6 +54,7 @@ object Audio {
                     }
 
                     override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                        android.util.Log.w("LunorAudio", "playback failed: ${error.errorCodeName}")
                         failed = true
                     }
 
