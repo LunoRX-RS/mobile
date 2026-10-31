@@ -301,6 +301,9 @@ async fn session(
         }
         status(&state, "finding", None);
         let mut queue = state.lock().map(|s| s.queue.clone()).unwrap_or_default();
+        // What the copy above was made from: asking for related music takes seconds, and an edit made meanwhile must
+        // not be overwritten when this pass publishes its list.
+        let cloned: Vec<String> = queue.iter().map(|t| t.id.clone()).collect();
         let (list, context) = state
             .lock()
             .map(|s| (s.list, s.context.clone()))
@@ -308,6 +311,9 @@ async fn session(
         // A playlist or album plays through first; related tracks come in only once it is used up.
         if radio && repeat != "one" && (queue.is_empty() || (!list && queue.len() < 10)) {
             queue = related(&yt, &seed, &history, queue).await;
+            if queue_edited(&state, &cloned) {
+                continue 'outer;
+            }
         }
         if queue.is_empty() && repeat == "all" && !context.is_empty() {
             queue = context.iter().skip(1).cloned().collect();
