@@ -370,7 +370,10 @@ async fn session(
                     // Related music is on but nothing came back (the service or the network failed): ask again.
                     failures = failures.saturating_add(1);
                     status(&state, "finding", None);
-                    retry_pause(&engine, failures, || mode(&state) != (repeat, radio_mode)).await;
+                    retry_pause(&engine, failures, || {
+                        mode(&state) != (repeat, radio_mode) || queue_edited(&state, &published)
+                    })
+                    .await;
                     continue 'outer;
                 }
             },
@@ -423,7 +426,10 @@ async fn session(
                     }
                     publish(&state, &queue, &mut published);
                     failures = failures.saturating_add(1);
-                    retry_pause(&engine, failures, || mode(&state) != (repeat, radio_mode)).await;
+                    retry_pause(&engine, failures, || {
+                        mode(&state) != (repeat, radio_mode) || queue_edited(&state, &published)
+                    })
+                    .await;
                     continue 'outer;
                 }
                 Advance::Waiting => {}
@@ -436,7 +442,10 @@ async fn session(
                     queue.retain(|t| t.id != next.id);
                     publish(&state, &queue, &mut published);
                     status(&state, "finding", None);
-                    retry_pause(&engine, failures, || mode(&state) != (repeat, radio_mode)).await;
+                    retry_pause(&engine, failures, || {
+                        mode(&state) != (repeat, radio_mode) || queue_edited(&state, &published)
+                    })
+                    .await;
                     continue 'outer;
                 }
             }
