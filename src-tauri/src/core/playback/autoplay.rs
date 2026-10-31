@@ -5,6 +5,7 @@ use super::{
     audio::AudioControl,
     cache::{DiskCache, OfflineTrack},
     command::PlaybackCommand,
+    diag::stage_log,
     engine::PlaybackEngine,
     extract::valid_id,
     state::PlaybackState,
@@ -301,6 +302,10 @@ async fn session(
         }
         status(&state, "finding", None);
         let mut queue = state.lock().map(|s| s.queue.clone()).unwrap_or_default();
+        stage_log!(
+            "[debug] autoplay: planning after {seed} (queue {}, radio {radio}, repeat {repeat}, failures {failures})",
+            queue.len()
+        );
         // What the copy above was made from: asking for related music takes seconds, and an edit made meanwhile must
         // not be overwritten when this pass publishes its list.
         let cloned: Vec<OfflineTrack> = queue.clone();
@@ -371,10 +376,16 @@ async fn session(
             }
             None => match queue.first().cloned() {
                 Some(track) => (track, None),
-                None if !radio => return Ended::Finished,
+                None if !radio => {
+                    stage_log!("[debug] autoplay: list used up and autoplay is off");
+                    return Ended::Finished;
+                }
                 None => {
                     // Related music is on but nothing came back (the service or the network failed): ask again.
                     failures = failures.saturating_add(1);
+                    stage_log!(
+                        "[debug] autoplay: nothing to play next, asking again (failure {failures})"
+                    );
                     status(&state, "finding", None);
                     retry_pause(&engine, failures, || {
                         mode(&state) != (repeat, radio_mode) || queue_edited(&state, &published)
@@ -384,6 +395,16 @@ async fn session(
                 }
             },
         };
+        stage_log!(
+            "[debug] autoplay: next is {} ({}, queue {})",
+            next.id,
+            if _file.is_some() {
+                "prepared"
+            } else {
+                "not prepared"
+            },
+            queue.len()
+        );
         status(&state, "ready", Some(next.title.clone()));
         // Best effort, after readiness is published; never awaited. Lyrics are looked up by song, not by episode.
         if next.provider != "Podcast" {
@@ -414,6 +435,7 @@ async fn session(
             let given_up = errored_since.is_some_and(|since| since.elapsed() >= ERROR_GRACE);
             match advance(&mut player, &seed, &next, given_up).await {
                 Advance::Played => {
+                    stage_log!("[debug] autoplay: now playing {}", next.id);
                     failures = 0;
                     errored_since = None;
                     push_back(&state, current.clone());
@@ -424,6 +446,7 @@ async fn session(
                     break;
                 }
                 Advance::Stalled => {
+                    stage_log!("[debug] autoplay: {} loaded but would not start", next.id);
                     drop(player);
                     errored_since = None;
                     push_back(&state, current.clone());
@@ -439,8 +462,12 @@ async fn session(
                     continue 'outer;
                 }
                 Advance::Waiting => {}
-                Advance::Gone => return Ended::Gone,
+                Advance::Gone => {
+                    stage_log!("[debug] autoplay: session over (stopped or replaced)");
+                    return Ended::Gone;
+                }
                 Advance::Failed => {
+                    stage_log!("[debug] autoplay: {} could not be loaded", next.id);
                     drop(player);
                     // This one cannot be loaded (even through the page player): it leaves the list and the next one
                     // gets a turn, after a pause that grows while failures keep coming.
