@@ -303,7 +303,7 @@ async fn session(
         let mut queue = state.lock().map(|s| s.queue.clone()).unwrap_or_default();
         // What the copy above was made from: asking for related music takes seconds, and an edit made meanwhile must
         // not be overwritten when this pass publishes its list.
-        let cloned: Vec<String> = queue.iter().map(|t| t.id.clone()).collect();
+        let cloned: Vec<OfflineTrack> = queue.clone();
         let (list, context) = state
             .lock()
             .map(|s| (s.list, s.context.clone()))
@@ -319,7 +319,7 @@ async fn session(
             queue = context.iter().skip(1).cloned().collect();
             queue.insert(0, context[0].clone());
         }
-        let mut published: Vec<String> = Vec::new();
+        let mut published: Vec<OfflineTrack> = Vec::new();
         publish(&state, &queue, &mut published);
         let repeat_one = repeat == "one";
         if repeat_one {
@@ -556,20 +556,20 @@ fn publish_queue(state: &Status, queue: &[OfflineTrack]) {
     }
 }
 /// Publishes `queue` and remembers what was published, so a later edit by the listener can be told apart.
-fn publish(state: &Status, queue: &[OfflineTrack], published: &mut Vec<String>) {
+fn publish(state: &Status, queue: &[OfflineTrack], published: &mut Vec<OfflineTrack>) {
     publish_queue(state, queue);
-    *published = queue.iter().map(|t| t.id.clone()).collect();
+    *published = queue.to_vec();
 }
 /// True when the up-next list is no longer what the session last published: the listener edited it (or more songs
 /// were added) meanwhile. The session then plans again from the list as it is, instead of overwriting it with its own
 /// older copy.
-fn queue_edited(state: &Status, published: &[String]) -> bool {
+///
+/// Whole tracks are compared, not only their ids: an edit can put a song that is already queued back at the head with
+/// newer details (its title or artwork), and that is an edit too.
+fn queue_edited(state: &Status, published: &[OfflineTrack]) -> bool {
     state
         .lock()
-        .map(|s| {
-            s.queue.len() != published.len()
-                || s.queue.iter().zip(published).any(|(t, id)| &t.id != id)
-        })
+        .map(|s| s.queue.as_slice() != published)
         .unwrap_or(false)
 }
 fn append(
@@ -1081,6 +1081,23 @@ mod tests {
         publish(&state, &now, &mut published);
         assert!(!queue_edited(&state, &published));
         assert!(edit_queue(&state, QueueEdit::Remove("ccccccccccc".into())));
+        assert!(queue_edited(&state, &published));
+    }
+    #[test]
+    fn a_song_put_back_at_the_head_with_new_details_counts_as_an_edit() {
+        let state: Status = Default::default();
+        let mut published = Vec::new();
+        publish(
+            &state,
+            &[track("aaaaaaaaaaa"), track("bbbbbbbbbbb")],
+            &mut published,
+        );
+        let renamed = OfflineTrack {
+            title: "Renamed".into(),
+            ..track("aaaaaaaaaaa")
+        };
+        // Same id, same place, new details: the ids alone would not show it.
+        assert!(edit_queue(&state, QueueEdit::Next(renamed)));
         assert!(queue_edited(&state, &published));
     }
     #[test]
