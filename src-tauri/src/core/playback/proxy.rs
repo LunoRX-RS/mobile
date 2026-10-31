@@ -41,7 +41,19 @@ impl AudioProxy {
         if audio.size == 0 || audio.size > MAX_STREAMED_BYTES {
             return Err(failed());
         }
-        let client = media_client(&audio, None)?;
+        let client = media_client(&audio, None, false)?;
+        Ok(Self::serve_streamed(listener, url, path, client, audio))
+    }
+
+    /// Like [`stream`](Self::stream) for a podcast episode, whose host is any public `https` address rather than
+    /// googlevideo.
+    #[cfg_attr(desktop, allow(dead_code))]
+    pub async fn stream_open(audio: ResolvedAudio) -> Result<Self, PlaybackErrorKind> {
+        let (listener, url, path) = bind().await?;
+        if audio.size == 0 || audio.size > MAX_STREAMED_BYTES {
+            return Err(failed());
+        }
+        let client = media_client(&audio, None, true)?;
         Ok(Self::serve_streamed(listener, url, path, client, audio))
     }
 
@@ -75,12 +87,12 @@ impl AudioProxy {
 
     pub async fn start(audio: ResolvedAudio) -> Result<Self, PlaybackErrorKind> {
         let (listener, url, path) = bind().await?;
-        let client = media_client(&audio, Some(Duration::from_secs(30)))?;
+        let client = media_client(&audio, Some(Duration::from_secs(30)), false)?;
         if audio.size == 0 || audio.size > MAX_STREAMED_BYTES {
             return Err(failed());
         }
         if audio.size > MAX_AUDIO_BYTES {
-            let client = media_client(&audio, None)?;
+            let client = media_client(&audio, None, false)?;
             return Ok(Self::serve_streamed(listener, url, path, client, audio));
         }
         // Never let the decoder start with a partial track that can fail mid-song.
@@ -119,6 +131,7 @@ async fn bind() -> Result<(TcpListener, String, String), PlaybackErrorKind> {
 fn media_client(
     audio: &ResolvedAudio,
     total: Option<Duration>,
+    open: bool,
 ) -> Result<reqwest::Client, PlaybackErrorKind> {
     let signed = reqwest::Url::parse(&audio.url).map_err(|_| failed())?;
     let mut builder = super::extract::bind_to_signed_family(reqwest::Client::builder(), &signed)
@@ -127,19 +140,32 @@ fn media_client(
         builder = builder.timeout(total);
     }
     builder
-        .redirect(reqwest::redirect::Policy::custom(|attempt| {
-            if attempt.previous().len() < 3
-                && attempt.url().scheme() == "https"
-                && attempt
-                    .url()
-                    .host_str()
-                    .is_some_and(|h| h.ends_with(".googlevideo.com"))
-            {
-                attempt.follow()
-            } else {
-                attempt.stop()
-            }
-        }))
+        .redirect(if open {
+            // A podcast host: any public https address, a bounded number of hops.
+            reqwest::redirect::Policy::custom(|attempt| {
+                if attempt.previous().len() < crate::core::rss_podcast::MAX_REDIRECTS
+                    && crate::core::rss_podcast::is_public_https(attempt.url())
+                {
+                    attempt.follow()
+                } else {
+                    attempt.stop()
+                }
+            })
+        } else {
+            reqwest::redirect::Policy::custom(|attempt| {
+                if attempt.previous().len() < 3
+                    && attempt.url().scheme() == "https"
+                    && attempt
+                        .url()
+                        .host_str()
+                        .is_some_and(|h| h.ends_with(".googlevideo.com"))
+                {
+                    attempt.follow()
+                } else {
+                    attempt.stop()
+                }
+            })
+        })
         .build()
         .map_err(|_| failed())
 }

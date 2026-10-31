@@ -84,6 +84,7 @@ fn rank(p: &ProviderId) -> u8 {
     match p {
         ProviderId::Spotify => 0,
         ProviderId::YouTube => 1,
+        ProviderId::Podcast => 2,
     }
 }
 

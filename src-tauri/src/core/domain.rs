@@ -9,6 +9,8 @@ use crate::core::errors::CoreError;
 pub enum ProviderId {
     Spotify,
     YouTube,
+    /// Podcast episodes read straight from a show's RSS feed (see `core::rss_podcast`).
+    Podcast,
 }
 
 impl ProviderId {
@@ -16,6 +18,7 @@ impl ProviderId {
         match self {
             Self::Spotify => "Spotify",
             Self::YouTube => "YouTube",
+            Self::Podcast => "Podcast",
         }
     }
 }
@@ -27,6 +30,7 @@ impl FromStr for ProviderId {
         match s {
             "Spotify" => Ok(Self::Spotify),
             "YouTube" => Ok(Self::YouTube),
+            "Podcast" => Ok(Self::Podcast),
             _ => Err(CoreError::Validation("unknown provider".into())),
         }
     }

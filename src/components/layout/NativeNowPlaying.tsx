@@ -351,6 +351,7 @@ export function NativeNowPlaying() {
     const closePanel = () => useUi.setState({ npPanel: null });
     const openPanel = (next: "menu" | "queue" | "timer") => useUi.setState({ npPanel: next });
     const durationMs = s.durationMs || null;
+    const episode = track.provider === "Podcast"; // songs only: likes, playlists, the song queue, album and artist pages
     const asQueued = { provider: "YouTube" as const, id: track.providerTrackId, title, artists, artworkUrl: artwork ?? null, durationMs };
     const addToEndOfQueue = async () => {
       closePanel();
@@ -434,12 +435,12 @@ export function NativeNowPlaying() {
               <Drawer open={panel === "menu"} onClose={closePanel} title={menuView === "menu" ? "More options" : "Add to playlist"}>
                 {menuView === "menu" ? (
                   <ul className="flex flex-col">
-                    <li><button type="button" className={row} onClick={() => { closePanel(); void toggleSaved(likeTrack); }}>{likedNow ? <HeartOff size={22} aria-hidden="true" /> : <Heart size={22} aria-hidden="true" />}{likedNow ? "Remove from liked songs" : "Add to liked songs"}</button></li>
-                    <li><button type="button" className={row} onClick={() => setMenuView("playlists")}><ListPlus size={22} aria-hidden="true" />Add to playlist</button></li>
-                    <li><button type="button" className={row} onClick={() => void addToEndOfQueue()}><ListEnd size={22} aria-hidden="true" />Add to queue</button></li>
+                    {!episode && <li><button type="button" className={row} onClick={() => { closePanel(); void toggleSaved(likeTrack); }}>{likedNow ? <HeartOff size={22} aria-hidden="true" /> : <Heart size={22} aria-hidden="true" />}{likedNow ? "Remove from liked songs" : "Add to liked songs"}</button></li>}
+                    {!episode && <li><button type="button" className={row} onClick={() => setMenuView("playlists")}><ListPlus size={22} aria-hidden="true" />Add to playlist</button></li>}
+                    {!episode && <li><button type="button" className={row} onClick={() => void addToEndOfQueue()}><ListEnd size={22} aria-hidden="true" />Add to queue</button></li>}
                     <li><button type="button" className={row} onClick={() => openPanel("queue")}><ListMusic size={22} aria-hidden="true" />Go to queue</button></li>
-                    <li><button type="button" className={row} disabled={!album?.id} onClick={() => { if (!album?.id) return; closePanel(); useUi.getState().openAlbum({ provider: "YouTube", id: album.id, name: album.name, artworkUrl: artwork ?? null, year: null }); useUi.getState().setNowPlaying(false); }}><Disc3 size={22} aria-hidden="true" /><span className="min-w-0"><span className="block">Go to album</span>{album ? <span className="block truncate text-[13px] text-secondary-text">{album.id ? album.name : "No album page for this song"}</span> : null}</span></button></li>
-                    <li><button type="button" className={row} disabled={!artistRef} onClick={() => { if (!artistRef) return; closePanel(); useUi.getState().openArtist(artistRef); }}><User size={22} aria-hidden="true" />Go to artist</button></li>
+                    {!episode && <li><button type="button" className={row} disabled={!album?.id} onClick={() => { if (!album?.id) return; closePanel(); useUi.getState().openAlbum({ provider: "YouTube", id: album.id, name: album.name, artworkUrl: artwork ?? null, year: null }); useUi.getState().setNowPlaying(false); }}><Disc3 size={22} aria-hidden="true" /><span className="min-w-0"><span className="block">Go to album</span>{album ? <span className="block truncate text-[13px] text-secondary-text">{album.id ? album.name : "No album page for this song"}</span> : null}</span></button></li>}
+                    {!episode && <li><button type="button" className={row} disabled={!artistRef} onClick={() => { if (!artistRef) return; closePanel(); useUi.getState().openArtist(artistRef); }}><User size={22} aria-hidden="true" />Go to artist</button></li>}
                     <li><button type="button" className={row} onClick={() => openPanel("timer")}><Moon size={22} aria-hidden="true" /><span className="min-w-0"><span className="block">Sleep timer</span>{timerActive ? <span className="block text-[13px] text-lumen-lavender">{minutesLeft ? `Pauses in ${minutesLeft}` : "Pauses when this song ends"}</span> : null}</span></button></li>
                   </ul>
                 ) : (

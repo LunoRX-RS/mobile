@@ -7,12 +7,22 @@ import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.session.MediaSession
 
 /** One ExoPlayer for the process. Core drives it through [LunorNativePlugin]; the system UI only queues [remote] events. */
 object Audio {
     private var exo: ExoPlayer? = null
     private var forwarding: Player? = null
+    private var appContext: Context? = null
+
+    /** The service's media session, so the page player can put its own state in front of ExoPlayer's. */
+    @Volatile var session: MediaSession? = null
+
+    /** Set while a track plays through the page player; the session then shows this instead of ExoPlayer. */
+    private var page: Player? = null
     private val events = ArrayDeque<Pair<String, Double>>()
 
     var ended = false
@@ -21,6 +31,12 @@ object Audio {
 
     fun player(context: Context): ExoPlayer =
         exo ?: ExoPlayer.Builder(context.applicationContext)
+            // Files are read from disk; everything else comes from the loopback proxy (see [LoopbackDataSource]).
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(
+                    DefaultDataSource.Factory(context.applicationContext, LoopbackDataSource.Factory()),
+                ),
+            )
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -38,6 +54,7 @@ object Audio {
                     }
 
                     override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                        android.util.Log.w("LunorAudio", "playback failed: ${error.errorCodeName}")
                         failed = true
                     }
 
@@ -52,7 +69,19 @@ object Audio {
             }
 
     /** What the MediaSession exposes. Transport actions become events for core instead of acting on ExoPlayer. */
-    fun controls(context: Context): Player =
+    fun controls(context: Context): Player {
+        appContext = context.applicationContext
+        return page ?: exoControls(context)
+    }
+
+    /** Main thread. Shows `mirror` in the media session, or ExoPlayer again for `null`. */
+    fun showPage(mirror: Player?) {
+        page = mirror
+        val context = appContext ?: return
+        session?.player = mirror ?: exoControls(context)
+    }
+
+    private fun exoControls(context: Context): Player =
         forwarding ?: object : ForwardingPlayer(player(context)) {
             override fun play() = push("play")
             override fun pause() = push("pause")

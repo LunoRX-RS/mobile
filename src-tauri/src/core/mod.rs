@@ -6,6 +6,7 @@ pub mod playlist;
 pub mod podcasts;
 pub mod queue;
 pub mod registry;
+pub mod rss_podcast;
 pub mod search;
 pub mod share_link;
 pub mod yt;

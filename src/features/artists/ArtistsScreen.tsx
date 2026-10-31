@@ -13,6 +13,7 @@ import { AddToPlaylist } from "../search/AddToPlaylist";
 import { playTrack, usePlayback } from "../../lib/playback";
 import { ChevronLeft, Play, Shuffle } from "lucide-react";
 import { backStep } from "../../lib/backNav";
+import ChannelClips from "./ChannelClips";
 
 
 const TONES: Tone[] = ["slate", "violet", "amber", "rose", "moss", "ink"];
@@ -119,6 +120,7 @@ export default function ArtistScreen() {
     {status && <StatusNote role="status">{status}{artist.id && status !== "Loading artist…" && <Button onClick={() => setRetry(n => n + 1)}>Retry</Button>}</StatusNote>}
     {profile?.description && <p className="line-clamp-4 max-w-[72ch] whitespace-pre-line text-[14px] leading-5 text-secondary-text">{profile.description}</p>}
     <Section id="artist-songs" title={profile ? "Songs" : "Liked songs"}><ul>{tracks.map((hit, i) => <ResultRow key={`${hit.provider}:${hit.providerTrackId}`} hit={hit} following={tracks.slice(i + 1)} />)}</ul>{tracks.length === 0 && <p>No songs available.</p>}</Section>
+    {artist.provider === "YouTube" && artist.id?.startsWith("UC") && <ChannelClips channelId={artist.id} name={profile?.name ?? artist.name} />}
     {profile && profile.albums.length > 0 && <Section id="artist-albums" title="Albums"><ul className="grid grid-cols-2 gap-4 md:grid-cols-4">{profile.albums.map(album => <li key={album.id}><button type="button" aria-label={`Open album ${album.name}`} onClick={() => useUi.getState().openAlbum({ provider: profile.provider, ...album })} className="group block w-full text-left">{album.artworkUrl && <img src={album.artworkUrl} alt="" loading="lazy" className="mb-2 aspect-square w-full rounded-lg object-cover transition-transform duration-200 group-hover:scale-[1.02]" />}<p className="text-primary-text">{album.name}</p><p className="text-[12px] text-secondary-text">{album.year} · {providerName(profile.provider)}</p></button></li>)}</ul></Section>}
     </div>
   </section>;
