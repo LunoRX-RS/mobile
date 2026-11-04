@@ -14,7 +14,8 @@ import { IconButton, Scrubber } from "../ui";
 import { DevicesButton } from "./Devices";
 
 export function PlaybackEvents() {
-  const trackId = usePlayback((s) => (s.requested ?? s.track)?.providerTrackId);
+  // Song details (lyrics, artists) come from YouTube Music; an episode has none to look up.
+  const trackId = usePlayback((s) => { const t = s.requested ?? s.track; return t && t.provider !== "Podcast" ? t.providerTrackId : undefined; });
   const request = usePlayback((s) => s.requested);
   useEffect(() => {
     let active = true;

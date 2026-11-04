@@ -37,6 +37,7 @@ class PlaybackService : MediaSessionService() {
                     }
             })
             .build()
+        Audio.session = session
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -47,6 +48,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        Audio.session = null
         session?.release()
         session = null
         super.onDestroy()

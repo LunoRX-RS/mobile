@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-podcast-channel"
+description = "Enables the podcast_channel command without any pre-configured scope."
+commands.allow = ["podcast_channel"]
+
+[[permission]]
+identifier = "deny-podcast-channel"
+description = "Denies the podcast_channel command without any pre-configured scope."
+commands.deny = ["podcast_channel"]

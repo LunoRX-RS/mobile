@@ -136,6 +136,7 @@ export interface PlayerProgressDto {
 /** `following` are the tracks to play after this one, in order (an album or playlist). */
 export function playerLoad(track: LoadedTrack, queueSelection = false, following: LoadedTrack[] = []): Promise<PlayerStateDto> {
   const next = following.map((t) => ({
+    provider: t.provider,
     providerTrackId: t.providerTrackId, title: t.title, artists: t.artists ?? [], artworkUrl: t.artworkUrl ?? null,
     durationMs: (t as { durationMs?: number | null }).durationMs ?? null,
   }));

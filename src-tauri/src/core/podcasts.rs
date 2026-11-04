@@ -44,16 +44,30 @@ pub fn episode_query(raw: &str) -> Result<String, CoreError> {
 
 /// Keeps what can be played as an episode: a normal upload with a known length of at least [`MIN_EPISODE_MS`].
 pub fn episodes(videos: Vec<Video>) -> Vec<SearchHit> {
+    clips(videos, MIN_EPISODE_MS, None)
+}
+
+/// Uploads of one channel that are talk, not songs: at least [`MIN_CLIP_MS`] long. A list of a channel's own uploads
+/// does not name the channel on each row, so `owner` fills it in.
+const MIN_CLIP_MS: u64 = 10 * 60 * 1000;
+
+/// The playable uploads of `videos` that last at least `min_ms`, named after their channel or, when a row has none,
+/// after `owner`.
+pub fn clips(videos: Vec<Video>, min_ms: u64, owner: Option<&str>) -> Vec<SearchHit> {
     videos
         .into_iter()
         .filter(|v| {
             valid_id(&v.id)
                 && !v.is_live
                 && !v.is_short
-                && v.duration_ms.is_some_and(|ms| ms >= MIN_EPISODE_MS)
+                && v.duration_ms.is_some_and(|ms| ms >= min_ms)
         })
         .filter_map(|video| {
-            let show = video.channel.as_ref().map(|c| c.name.clone());
+            let show = video
+                .channel
+                .as_ref()
+                .map(|c| c.name.clone())
+                .or_else(|| owner.map(str::to_owned));
             let mut hit = SearchHit::new(
                 ProviderId::YouTube,
                 video.id.clone(),
@@ -81,6 +95,47 @@ pub fn episodes(videos: Vec<Video>) -> Vec<SearchHit> {
             Some(hit)
         })
         .collect()
+}
+
+/// The id of the playlist that holds every upload of the channel, from the channel's own id (`UC…` becomes `UU…`).
+pub fn uploads_playlist(channel_id: &str) -> Option<String> {
+    let rest = channel_id.strip_prefix("UC")?;
+    (rest.len() == 22
+        && rest
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'))
+    .then(|| format!("UU{rest}"))
+}
+
+/// A page of the talk uploads (10 minutes or longer) of a channel, newest first. This is how a channel that is not a
+/// music artist (a podcast, a storyteller, a blog) shows what it has to listen to.
+pub async fn channel_clips(
+    yt: &Yt,
+    channel_id: &str,
+    owner: &str,
+    continuation: Option<&str>,
+) -> Result<EpisodePage, CoreError> {
+    let playlist =
+        uploads_playlist(channel_id).ok_or_else(|| CoreError::Validation("channel id".into()))?;
+    if continuation.is_some_and(|t| !valid_continuation(t)) {
+        return Err(CoreError::Validation("channel continuation".into()));
+    }
+    let owner = owner.trim();
+    if owner.chars().count() > MAX_QUERY_CHARS || owner.chars().any(char::is_control) {
+        return Err(CoreError::Validation("channel name".into()));
+    }
+    let page = tokio::time::timeout(TIMEOUT, yt.youtube().playlist(&playlist, continuation))
+        .await
+        .map_err(|_| CoreError::ProviderUnavailable)?
+        .map_err(|_| CoreError::ProviderUnavailable)?;
+    Ok(EpisodePage {
+        hits: clips(
+            page.items,
+            MIN_CLIP_MS,
+            (!owner.is_empty()).then_some(owner),
+        ),
+        continuation: page.continuation,
+    })
 }
 
 /// A continuation handle is opaque; only its size is checked here, the library checks the rest.
@@ -151,6 +206,41 @@ mod tests {
         assert_eq!(hits[0].artists(), ["The Show".to_owned()]);
         assert_eq!(hits[0].duration_ms(), Some(45 * 60_000));
         assert_eq!(hits[0].source(), Some(SearchSource::YouTube));
+    }
+
+    #[test]
+    fn a_channels_uploads_playlist_comes_from_its_id() {
+        assert_eq!(
+            uploads_playlist("UC1234567890123456789012").as_deref(),
+            Some("UU1234567890123456789012")
+        );
+        for bad in [
+            "",
+            "UC123",
+            "XX1234567890123456789012",
+            "UC12345678901234567890 2",
+            "PLabc",
+        ] {
+            assert_eq!(uploads_playlist(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn channel_clips_keep_talk_and_name_unnamed_rows_after_the_owner() {
+        let mut bare = video("aaaaaaaaaaa", Some(25));
+        bare.channel = None;
+        let hits = clips(
+            vec![
+                bare,
+                video("bbbbbbbbbbb", Some(9)),
+                video("ccccccccccc", Some(30)),
+            ],
+            MIN_CLIP_MS,
+            Some("ด.ดล blog"),
+        );
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].artists(), ["ด.ดล blog".to_owned()]);
+        assert_eq!(hits[1].artists(), ["The Show".to_owned()]);
     }
 
     #[test]

@@ -85,6 +85,8 @@ pub fn artist_id(provider: &ProviderId, id: &str) -> bool {
                     .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
         }
         ProviderId::Spotify => id.len() == 22 && id.bytes().all(|b| b.is_ascii_alphanumeric()),
+        // A show is not an artist page.
+        ProviderId::Podcast => false,
     }
 }
 pub struct SavedLibrary {

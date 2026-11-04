@@ -142,22 +142,27 @@ impl PlayerState {
                 host.map(|host| host.with_cache(cache))
             });
         // On a phone the page player takes a load the direct stream refuses (see `core::playback::routing`).
+        // Podcast episodes play on the same native player (phones only).
+        type Extra = Option<Box<dyn crate::core::playback::host::PlayerHost>>;
         #[cfg(mobile)]
         let native = native.map(|host| {
             let page = host.page_host();
+            let podcast: Extra = Some(Box::new(host.podcast_host()));
             let audio = host.audio.clone();
             (
                 crate::core::playback::routing::RoutingHost::new(host, page),
                 audio,
+                podcast,
             )
         });
         #[cfg(desktop)]
         let native = native.map(|host| {
             let audio = host.audio.clone();
-            (host, audio)
+            let podcast: Extra = None;
+            (host, audio, podcast)
         });
         let state = match native {
-            Ok((host, audio)) => {
+            Ok((host, audio, podcast)) => {
                 let mut registry = ProviderRegistry::new();
                 let caps = ProviderCapabilities {
                     playback: CapabilityStatus::Supported,
@@ -166,8 +171,20 @@ impl PlayerState {
                 registry
                     .register(ProviderId::YouTube, caps)
                     .expect("fresh registry");
-                let hosts: HashMap<_, Box<dyn crate::core::playback::host::PlayerHost>> =
+                let mut hosts: HashMap<_, Box<dyn crate::core::playback::host::PlayerHost>> =
                     HashMap::from([(ProviderId::YouTube, Box::new(host) as _)]);
+                if let Some(podcast) = podcast {
+                    registry
+                        .register(
+                            ProviderId::Podcast,
+                            ProviderCapabilities {
+                                playback: CapabilityStatus::Supported,
+                                ..ProviderCapabilities::unverified()
+                            },
+                        )
+                        .expect("fresh registry");
+                    hosts.insert(ProviderId::Podcast, podcast);
+                }
                 let mut state = Self::new(PlaybackEngine::new(
                     registry,
                     hosts,
@@ -238,6 +255,8 @@ impl PlayerState {
                 let history_track = if engine.state() == PlaybackState::Playing {
                     engine
                         .active_track()
+                        // Play history and listening stats are about songs; an episode is not recorded in them.
+                        .filter(|t| t.provider != ProviderId::Podcast)
                         .filter(|t| {
                             last_history_track.as_ref() != Some(&t.provider_track_id)
                                 || history_pending
@@ -586,6 +605,9 @@ pub struct PlayerLoadArgs {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FollowingTrack {
+    /// "YouTube" when missing; "Podcast" for an episode, whose id is its audio address.
+    #[serde(default)]
+    pub provider: Option<String>,
     pub provider_track_id: String,
     pub title: String,
     #[serde(default)]
@@ -605,8 +627,17 @@ fn validate_following(
     tracks
         .into_iter()
         .map(|t| {
-            if !crate::core::playback::extract::valid_id(&t.provider_track_id)
-                || t.title.trim().is_empty()
+            let podcast = t.provider.as_deref() == Some("Podcast");
+            let id = if podcast {
+                crate::core::rss_podcast::public_https(&t.provider_track_id).map(String::from)
+            } else {
+                crate::core::playback::extract::valid_id(&t.provider_track_id)
+                    .then(|| t.provider_track_id.clone())
+            };
+            let Some(id) = id else {
+                return Err(invalid());
+            };
+            if t.title.trim().is_empty()
                 || t.title.len() > MAX_TITLE_BYTES
                 || t.artists.len() > 30
                 || t.artists.iter().any(|a| a.len() > 512)
@@ -614,14 +645,17 @@ fn validate_following(
                 return Err(invalid());
             }
             Ok(crate::core::playback::cache::OfflineTrack {
-                provider: "YouTube".into(),
-                id: t.provider_track_id,
+                provider: if podcast { "Podcast" } else { "YouTube" }.into(),
+                id,
                 title: t.title,
                 artists: t.artists,
-                artwork_url: t
-                    .artwork_url
-                    .as_deref()
-                    .and_then(crate::core::playback::track_info::artwork_url),
+                artwork_url: t.artwork_url.as_deref().and_then(|a| {
+                    if podcast {
+                        crate::core::rss_podcast::public_https(a).map(String::from)
+                    } else {
+                        crate::core::playback::track_info::artwork_url(a)
+                    }
+                }),
                 duration_ms: t.duration_ms,
             })
         })
@@ -666,8 +700,19 @@ fn validate_text(value: &str, max_bytes: usize) -> Result<String, PlayerError> {
 
 fn validate_load(args: PlayerLoadArgs) -> Result<TrackReference, PlayerError> {
     let provider = ProviderId::from_str(&args.provider).map_err(|_| invalid())?;
-    let id = validate_text(&args.provider_track_id, MAX_ID_BYTES)?;
-    let url = validate_text(&args.canonical_url, MAX_URL_BYTES)?;
+    // An episode is identified by its audio address, which is also where it is read from: both come from the one
+    // address, after the check that it may be fetched.
+    let (id, url) = if provider == ProviderId::Podcast {
+        let address: String = crate::core::rss_podcast::public_https(&args.canonical_url)
+            .ok_or_else(invalid)?
+            .into();
+        (address.clone(), address)
+    } else {
+        (
+            validate_text(&args.provider_track_id, MAX_ID_BYTES)?,
+            validate_text(&args.canonical_url, MAX_URL_BYTES)?,
+        )
+    };
     if args.title.len() > MAX_TITLE_BYTES {
         return Err(invalid());
     }
@@ -680,10 +725,13 @@ fn validate_load(args: PlayerLoadArgs) -> Result<TrackReference, PlayerError> {
     let mut track =
         TrackReference::new(provider, id, url, args.title).map_err(|e| from_core(&e))?;
     track.artists = args.artists;
-    track.artwork_url = args
-        .artwork_url
-        .as_deref()
-        .and_then(crate::core::playback::track_info::artwork_url);
+    track.artwork_url = args.artwork_url.as_deref().and_then(|a| {
+        if track.provider == ProviderId::Podcast {
+            crate::core::rss_podcast::public_https(a).map(String::from)
+        } else {
+            crate::core::playback::track_info::artwork_url(a)
+        }
+    });
     track.duration_ms = args.duration_ms;
     Ok(track)
 }
@@ -955,6 +1003,23 @@ async fn load_track(
             status.queue = following.clone();
         }
         crate::core::playback::autoplay::set_context(&state.autoplay_status, &track, &following);
+    }
+    // One provider plays at a time. Choosing a song while an episode plays (or the reverse) is the listener's own
+    // switch, so the old one is stopped first; a queue never mixes the two. The autoplay lock is already held here,
+    // so this goes to the engine directly.
+    let switching = state
+        .engine
+        .lock()
+        .await
+        .active_track()
+        .is_some_and(|active| active.provider != track.provider);
+    if switching {
+        let _ = state
+            .engine
+            .lock()
+            .await
+            .dispatch(PlaybackCommand::Stop)
+            .await;
     }
     let result = finish(app, dispatch(state, PlaybackCommand::Load(track)).await);
     if result.is_ok() {
@@ -1269,6 +1334,7 @@ mod tests {
     #[test]
     fn following_tracks_are_validated_and_bounded() {
         let ok = |id: &str| FollowingTrack {
+            provider: None,
             provider_track_id: id.into(),
             title: "t".into(),
             artists: vec![],
@@ -1282,6 +1348,51 @@ mod tests {
         assert!(validate_following(vec![ok("bad id")]).is_err());
         let many = (0..=MAX_FOLLOWING).map(|_| ok("r-G2pKr2_n8")).collect();
         assert!(validate_following(many).is_err());
+    }
+
+    #[test]
+    fn an_episode_is_identified_and_read_by_its_audio_address() {
+        let track = validate_load(args(
+            "Podcast",
+            "ignored",
+            "http://media.example.com/ep1.mp3?x=1",
+        ))
+        .unwrap();
+        assert_eq!(track.provider, ProviderId::Podcast);
+        assert_eq!(
+            track.provider_track_id,
+            "https://media.example.com/ep1.mp3?x=1"
+        );
+        assert_eq!(track.canonical_url, track.provider_track_id);
+        for bad in [
+            "https://127.0.0.1/a.mp3",
+            "https://localhost/a.mp3",
+            "file:///data/a.mp3",
+            "https://media.example.com:8443/a.mp3",
+            "",
+        ] {
+            assert_eq!(
+                category_of(validate_load(args("Podcast", "x", bad))),
+                PlayerErrorCategory::Validation,
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_episode_may_follow_in_a_queue_but_only_by_a_public_address() {
+        let episode = |id: &str| FollowingTrack {
+            provider: Some("Podcast".into()),
+            provider_track_id: id.into(),
+            title: "t".into(),
+            artists: vec![],
+            artwork_url: None,
+            duration_ms: None,
+        };
+        let queued = validate_following(vec![episode("https://media.example.com/a.mp3")]).unwrap();
+        assert_eq!(queued[0].provider, "Podcast");
+        assert!(validate_following(vec![episode("https://10.0.0.2/a.mp3")]).is_err());
+        assert!(validate_following(vec![episode("r-G2pKr2_n8")]).is_err());
     }
 
     fn valid_args() -> PlayerLoadArgs {

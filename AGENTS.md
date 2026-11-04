@@ -16,6 +16,8 @@ Rules for any coding agent working in this repository. Self-contained: no other 
 
 **2026-10-21 user-approved YouTube exception:** the user explicitly requested native extraction/libmpv playback and Google-session-cookie sign-in instead of OAuth2. The no-extraction/no-cookie restriction in rule 2 is superseded for YouTube only. Desktop credential isolation, validation, truthful capability reporting and all other security rules still apply. This is not provider approval.
 
+**2026-10-31 user-approved YouTube page-player exception:** the user explicitly asked, in chat, for ad-free background audio and told the agent to go ahead despite rule 2. The YouTube page player used as the fallback (`PagePlayer.kt`) therefore mutes, speeds up and skips the page's ads and reports itself visible so YouTube does not pause it in the background. This is not YouTube's approval and is against its terms; when the listener is signed in, the account carries that risk. Direct audio streams stay the preferred route, and nothing here forges tokens or rotates client identities.
+
 ## What this is
 
 Tauri 2 app for iPhone, iPad and Android, derived from the desktop app (same Rust core and React UI). It plays YouTube Music through AVPlayer (iOS) or Media3 (Android) behind the `lunor-native` plugin instead of libmpv. Read [`MOBILE.md`](MOBILE.md) before touching playback, secrets, sign-in, layout breakpoints or the build setup. The unified-player description follows: LUNOR-X is a music player for Spotify and YouTube Music, with an embedded Rust core. It talks to an independent backend (separate repo) for app accounts and playlist persistence. Pre-release: no provider can play audio in the shipped app.

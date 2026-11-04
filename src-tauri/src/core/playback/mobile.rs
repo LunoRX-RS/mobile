@@ -71,6 +71,15 @@ impl NativeHost {
         })
     }
 
+    /// Plays podcast episodes on the same native player, sharing this host's report revision.
+    pub fn podcast_host(&self) -> PodcastHost {
+        PodcastHost {
+            app: self.app.clone(),
+            revision: self.revision.clone(),
+            proxy: tokio::sync::Mutex::new(None),
+        }
+    }
+
     /// The fallback that plays through the provider's own page, sharing this host's report revision.
     pub fn page_host(&self) -> PageHost {
         PageHost {
@@ -280,6 +289,86 @@ impl PlayerHost for NativeHost {
             if result.is_err() || is_stop {
                 proxy.take();
                 self.file.lock().await.take();
+            }
+            match result {
+                Ok(_) => HostOutcome::Confirmed {
+                    request_id: req.request_id,
+                    revision: req.revision,
+                },
+                Err(kind) => HostOutcome::Rejected {
+                    request_id: req.request_id,
+                    revision: req.revision,
+                    kind,
+                },
+            }
+        })
+    }
+}
+
+/// Plays podcast episodes: an `https` audio file read from the show's host through the loopback proxy, which fetches
+/// the byte ranges the native player asks for. No page, no extraction, nothing provider-specific.
+pub struct PodcastHost {
+    app: AppHandle<Wry>,
+    revision: Arc<AtomicU64>,
+    proxy: tokio::sync::Mutex<Option<AudioProxy>>,
+}
+
+/// Probing the audio host follows redirect hops and may meet a slow server.
+const PODCAST_OPEN_TIMEOUT: Duration = Duration::from_secs(25);
+
+impl PlayerHost for PodcastHost {
+    fn provider(&self) -> ProviderId {
+        ProviderId::Podcast
+    }
+
+    fn prepare<'a>(&'a self, req: HostRequest) -> HostFuture<'a> {
+        Box::pin(async move {
+            let mut proxy = self.proxy.lock().await;
+            self.revision.store(req.revision, Ordering::SeqCst);
+            let is_stop = matches!(req.command, PlaybackCommand::Stop);
+            let result = match &req.command {
+                PlaybackCommand::Load(track) => {
+                    let _ = call(&self.app, "stop", json!({})).await;
+                    proxy.take();
+                    let opened = tokio::time::timeout(
+                        PODCAST_OPEN_TIMEOUT,
+                        crate::core::rss_podcast::open_audio(&track.canonical_url),
+                    )
+                    .await;
+                    match opened {
+                        Ok(Ok(audio)) => {
+                            stage_log!("[debug] podcast load: streaming bytes={}", audio.size);
+                            match AudioProxy::stream_open(audio).await {
+                                Ok(next) => {
+                                    let url = next.url.clone();
+                                    *proxy = Some(next);
+                                    call(&self.app, "load", json!({ "url": url })).await
+                                }
+                                Err(e) => Err(e),
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            stage_log!("[debug] podcast load: audio host refused: {e:?}");
+                            Err(extract::failed())
+                        }
+                        Err(_) => Err(PlaybackErrorKind::HostRejected(HostRejectKind::Timeout)),
+                    }
+                }
+                PlaybackCommand::Play | PlaybackCommand::Resume => {
+                    call(&self.app, "play", json!({})).await
+                }
+                PlaybackCommand::Pause => call(&self.app, "pause", json!({})).await,
+                PlaybackCommand::Stop => call(&self.app, "stop", json!({})).await,
+                PlaybackCommand::Seek { position_ms } => {
+                    call(&self.app, "seek", json!({ "positionMs": position_ms })).await
+                }
+                PlaybackCommand::SetVolume(v) => {
+                    call(&self.app, "setVolume", json!({ "volume": v.value() })).await
+                }
+                _ => Err(extract::failed()),
+            };
+            if result.is_err() || is_stop {
+                proxy.take();
             }
             match result {
                 Ok(_) => HostOutcome::Confirmed {
